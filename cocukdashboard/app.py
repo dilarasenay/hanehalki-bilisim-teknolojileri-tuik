@@ -12,9 +12,12 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-from pathlib import Path
+BASE_DIR = Path(__file__).parent
 
-CSV_PATH = Path(__file__).parent / "2024cocukbilisim.csv"
+CSV_PATH = BASE_DIR / "2024cocukbilisim.csv"
+CHILD_IMG = BASE_DIR / "assets" / "child.png"
+CHILD_CLEAN_IMG = BASE_DIR / "assets" / "child_clean.png"
+
 PLOT_CONFIG = {
     "displayModeBar": False,
     "displaylogo": False,
@@ -79,8 +82,8 @@ def get_base64(img_path):
         return base64.b64encode(f.read()).decode()
 
 
-clean_path = make_child_transparent("assets/child.png", "assets/child_clean.png")
-img_base64 = get_base64(clean_path if clean_path else "assets/child.png")
+clean_path = make_child_transparent(CHILD_IMG, CHILD_CLEAN_IMG)
+img_base64 = get_base64(clean_path if clean_path else CHILD_IMG)
 
 
 def section_title(title):
@@ -141,7 +144,6 @@ html, body, [class*="css"] {
     font-family: 'Nunito', sans-serif !important;
 }
 
-/* Üst bar temiz */
 [data-testid="stHeader"],
 [data-testid="stToolbar"],
 div[data-testid="stDecoration"],
@@ -151,7 +153,6 @@ div[data-testid="stStatusWidget"],
     visibility: hidden !important;
 }
 
-/* Sidebar sabit */
 section[data-testid="stSidebar"] {
     width: 315px !important;
     min-width: 315px !important;
@@ -174,7 +175,6 @@ button[data-testid="stSidebarCollapseButton"],
     margin-left: 0 !important;
 }
 
-/* Genel arka plan */
 [data-testid="stAppViewContainer"] {
     background:
         radial-gradient(circle at 8% 8%, rgba(255,143,179,0.26), transparent 30%),
@@ -184,7 +184,6 @@ button[data-testid="stSidebarCollapseButton"],
         linear-gradient(135deg, #FFF8EC 0%, #FFF2F8 45%, #F1FBFF 100%);
 }
 
-/* Sidebar tasarım */
 [data-testid="stSidebar"] {
     background:
         radial-gradient(circle at 18% 8%, rgba(255,255,255,0.24), transparent 18%),
@@ -227,7 +226,6 @@ button[data-testid="stSidebarCollapseButton"],
     padding-bottom: 2.5rem !important;
 }
 
-/* Hero */
 .hero {
     background:
         radial-gradient(circle at 88% 20%, rgba(255,255,255,0.22), transparent 18%),
@@ -299,7 +297,6 @@ button[data-testid="stSidebarCollapseButton"],
     50% { transform: translateY(-10px); }
 }
 
-/* KPI */
 .kpi {
     border-radius: 30px;
     padding: 23px 23px;
@@ -336,7 +333,6 @@ button[data-testid="stSidebarCollapseButton"],
     opacity: 0.62;
 }
 
-/* Premium başlık ve renkli baloncuklar */
 .section-wrap {
     position: relative;
     display: inline-block;
