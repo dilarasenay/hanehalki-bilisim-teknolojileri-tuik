@@ -2,10 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import base64
+from PIL import Image
+from pathlib import Path
 
 st.set_page_config(
     page_title="Çocuk Dijital Yaşam 2024",
-    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -19,38 +21,80 @@ PLOT_CONFIG = {
 }
 
 PURPLE = "#8B7CFF"
-LILAC = "#C9B8FF"
-PINK = "#FF8FB3"
 HOT_PINK = "#FF6FAE"
+PINK = "#FF8FB3"
 BLUE = "#7AB8FF"
-SKY = "#DFF0FF"
 MINT = "#7EDDC3"
-MINT_LIGHT = "#DDF8F1"
 YELLOW = "#FFD66B"
-YELLOW_LIGHT = "#FFF1C7"
 ORANGE = "#FFA36C"
-PEACH = "#FFE2D4"
 GREEN = "#A6DA70"
 RED = "#FF7A7A"
-CREAM = "#FFF8EC"
-WHITE = "#FFFFFF"
-TEXT = "#2F246B"
+TEXT = "#24145F"
 SOFT_TEXT = "#7B6FA8"
 
-PALETTE = [PURPLE, PINK, BLUE, MINT, YELLOW, ORANGE, GREEN, RED]
+PALETTE = [PURPLE, HOT_PINK, BLUE, MINT, YELLOW, ORANGE, GREEN, RED]
+
 
 @st.cache_data
 def load_data():
     return pd.read_csv(CSV_PATH, encoding="utf-8-sig")
 
+
 df = load_data()
+
 
 def yes_pct(data, col):
     s = pd.to_numeric(data[col], errors="coerce")
     return round((s == 1).mean() * 100, 1)
 
+
 def fmt_pct(x):
     return str(x).replace(".", ",")
+
+
+def make_child_transparent(input_path, output_path):
+    input_path = Path(input_path)
+    output_path = Path(output_path)
+
+    if not input_path.exists():
+        return None
+
+    img = Image.open(input_path).convert("RGBA")
+    new_data = []
+
+    for r, g, b, a in img.getdata():
+        if r > 218 and g > 218 and b > 218:
+            new_data.append((255, 255, 255, 0))
+        else:
+            new_data.append((r, g, b, a))
+
+    img.putdata(new_data)
+    img.save(output_path)
+    return output_path
+
+
+def get_base64(img_path):
+    with open(img_path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+clean_path = make_child_transparent("assets/child.png", "assets/child_clean.png")
+img_base64 = get_base64(clean_path if clean_path else "assets/child.png")
+
+
+def section_title(title):
+    st.markdown(f"""
+    <div class="section-wrap">
+        <div class="bubble b1"></div>
+        <div class="bubble b2"></div>
+        <div class="bubble b3"></div>
+        <div class="section-header">
+            <span class="section-dot"></span>
+            <span>{title}</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 
 def apply_theme(fig, height=350):
     if fig.layout.title.text is None:
@@ -61,29 +105,24 @@ def apply_theme(fig, height=350):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font=dict(family="Nunito", color=TEXT, size=13),
-        title=dict(
-            font=dict(size=16, color=TEXT, family="Nunito"),
-            x=0.02,
-            xanchor="left"
-        ),
-        margin=dict(t=48, b=32, l=32, r=32),
+        title=dict(font=dict(size=15, color=TEXT), x=0.02),
+        margin=dict(t=42, b=32, l=32, r=32),
         legend=dict(
             bgcolor="rgba(255,255,255,0)",
             orientation="h",
             y=-0.18,
             x=0.5,
-            xanchor="center",
-            font=dict(size=12, color=TEXT)
+            xanchor="center"
         ),
         xaxis=dict(
-            gridcolor="rgba(139,124,255,0.12)",
+            gridcolor="rgba(139,124,255,0.13)",
             zeroline=False,
             linecolor="rgba(139,124,255,0.18)",
             tickfont=dict(color=SOFT_TEXT),
             title_font=dict(color=SOFT_TEXT)
         ),
         yaxis=dict(
-            gridcolor="rgba(139,124,255,0.12)",
+            gridcolor="rgba(139,124,255,0.13)",
             zeroline=False,
             linecolor="rgba(139,124,255,0.18)",
             tickfont=dict(color=SOFT_TEXT),
@@ -91,6 +130,7 @@ def apply_theme(fig, height=350):
         )
     )
     return fig
+
 
 st.markdown("""
 <style>
@@ -100,18 +140,57 @@ html, body, [class*="css"] {
     font-family: 'Nunito', sans-serif !important;
 }
 
-[data-testid="stAppViewContainer"] {
-    background:
-        radial-gradient(circle at 8% 8%, rgba(255,143,179,0.28), transparent 28%),
-        radial-gradient(circle at 92% 4%, rgba(122,184,255,0.25), transparent 26%),
-        radial-gradient(circle at 18% 94%, rgba(126,221,195,0.22), transparent 30%),
-        radial-gradient(circle at 85% 88%, rgba(255,214,107,0.22), transparent 28%),
-        #FFF8EC;
+/* Üst bar temiz */
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"],
+[data-testid="stStatusWidget"] {
+    display: none !important;
+    visibility: hidden !important;
 }
 
+/* Sidebar sabit */
+section[data-testid="stSidebar"] {
+    width: 315px !important;
+    min-width: 315px !important;
+    max-width: 315px !important;
+    transform: translateX(0px) !important;
+    visibility: visible !important;
+}
+
+button[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+[data-testid="stSidebar"][aria-expanded="false"] {
+    transform: translateX(0px) !important;
+    margin-left: 0 !important;
+}
+
+/* Genel arka plan */
+[data-testid="stAppViewContainer"] {
+    background:
+        radial-gradient(circle at 8% 8%, rgba(255,143,179,0.26), transparent 30%),
+        radial-gradient(circle at 92% 6%, rgba(122,184,255,0.27), transparent 30%),
+        radial-gradient(circle at 16% 94%, rgba(126,221,195,0.22), transparent 32%),
+        radial-gradient(circle at 86% 88%, rgba(255,214,107,0.24), transparent 30%),
+        linear-gradient(135deg, #FFF8EC 0%, #FFF2F8 45%, #F1FBFF 100%);
+}
+
+/* Sidebar tasarım */
 [data-testid="stSidebar"] {
     background:
-        linear-gradient(180deg, #8B7CFF 0%, #C681E8 42%, #FF8FB3 100%);
+        radial-gradient(circle at 18% 8%, rgba(255,255,255,0.24), transparent 18%),
+        radial-gradient(circle at 80% 30%, rgba(255,255,255,0.13), transparent 24%),
+        linear-gradient(180deg, #7D6BFF 0%, #C681E8 42%, #FF6FAE 100%);
+    border-right: 4px solid rgba(255,255,255,0.35);
+    box-shadow: 18px 0 45px rgba(80,65,170,0.18);
 }
 
 [data-testid="stSidebar"] * {
@@ -123,103 +202,118 @@ html, body, [class*="css"] {
     font-size: 13px !important;
 }
 
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    color: white !important;
-}
-
 [data-testid="stSidebar"] .stMultiSelect span {
-    background: rgba(255,255,255,0.24) !important;
+    background: rgba(255,255,255,0.25) !important;
     border-radius: 999px !important;
     color: white !important;
-    font-weight: 800 !important;
+    font-weight: 900 !important;
 }
 
 [data-testid="stSidebar"] [data-baseweb="select"] > div {
-    background: rgba(255,255,255,0.16) !important;
-    border: 1px solid rgba(255,255,255,0.30) !important;
+    background: rgba(255,255,255,0.17) !important;
+    border: 1px solid rgba(255,255,255,0.34) !important;
     border-radius: 18px !important;
 }
 
-[data-testid="stSidebar"] [data-testid="stTickBarMin"],
-[data-testid="stSidebar"] [data-testid="stTickBarMax"] {
-    color: white !important;
-    font-weight: 800 !important;
+[data-testid="stSidebar"] hr {
+    background: rgba(255,255,255,0.25) !important;
 }
 
 .block-container {
-    padding-top: 1.2rem;
-    padding-bottom: 2rem;
+    padding-top: 0.8rem !important;
+    padding-left: 3rem !important;
+    padding-right: 3rem !important;
+    padding-bottom: 2.5rem !important;
 }
 
+/* Hero */
 .hero {
-    background: linear-gradient(135deg, #8B7CFF 0%, #FF8FB3 52%, #FFD66B 100%);
+    background:
+        radial-gradient(circle at 88% 20%, rgba(255,255,255,0.22), transparent 18%),
+        linear-gradient(135deg, #8B7CFF 0%, #FF8FB3 52%, #FFD66B 100%);
     border-radius: 34px;
-    padding: 36px 42px;
-    margin-bottom: 24px;
+    padding: 38px 44px;
+    margin-bottom: 28px;
     color: white;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 24px 60px rgba(139,124,255,0.24);
-    border: 4px solid rgba(255,255,255,0.48);
+    box-shadow: 0 26px 64px rgba(139,124,255,0.25);
+    border: 4px solid rgba(255,255,255,0.62);
+    min-height: 205px;
 }
 
 .hero::before {
     content: "";
     position: absolute;
-    width: 210px;
-    height: 210px;
-    right: -60px;
-    top: -70px;
-    background: rgba(255,255,255,0.24);
+    width: 230px;
+    height: 230px;
+    right: -58px;
+    top: -78px;
+    background: rgba(255,255,255,0.23);
     border-radius: 50%;
 }
 
 .hero::after {
-    content: "";
+    content: "★";
     position: absolute;
-    width: 115px;
-    height: 115px;
-    right: 145px;
-    bottom: -34px;
-    background: rgba(255,255,255,0.18);
-    border-radius: 50%;
+    left: 34px;
+    top: 28px;
+    color: #FFD66B;
+    font-size: 44px;
+    text-shadow: 0 8px 22px rgba(0,0,0,0.14);
+    z-index: 3;
 }
 
 .hero h1 {
-    font-size: 38px;
+    font-size: 39px;
     font-weight: 900;
-    margin: 0 0 10px;
-    letter-spacing: -0.7px;
+    margin: 0 300px 10px 75px;
+    letter-spacing: -0.8px;
     position: relative;
     z-index: 2;
 }
 
 .hero p {
-    margin: 0;
+    margin: 0 300px 0 75px;
     font-size: 15px;
-    font-weight: 800;
-    opacity: 0.96;
+    font-weight: 900;
+    opacity: 0.97;
     position: relative;
     z-index: 2;
 }
 
+.hero-child {
+    position: absolute;
+    right: 20px;
+    bottom: -24px;
+    width: 265px;
+    z-index: 4;
+    background: transparent !important;
+    filter: drop-shadow(0 18px 30px rgba(60,52,137,0.24));
+    animation: floatChild 3.2s ease-in-out infinite;
+}
+
+@keyframes floatChild {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+}
+
+/* KPI */
 .kpi {
     border-radius: 30px;
-    padding: 22px 22px;
-    min-height: 136px;
+    padding: 23px 23px;
+    min-height: 142px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    box-shadow: 0 18px 36px rgba(60,52,137,0.10);
-    border: 4px solid rgba(255,255,255,0.82);
-    transition: all 0.18s ease;
+    box-shadow: 0 18px 38px rgba(60,52,137,0.11);
+    border: 4px solid rgba(255,255,255,0.86);
+    transition: all 0.20s ease;
 }
 
 .kpi:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 24px 46px rgba(60,52,137,0.14);
+    transform: translateY(-5px) scale(1.01);
+    box-shadow: 0 26px 52px rgba(60,52,137,0.16);
 }
 
 .kpi-label {
@@ -237,51 +331,100 @@ html, body, [class*="css"] {
 
 .kpi-sub {
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 900;
     opacity: 0.62;
 }
 
-.section-header {
-    background: rgba(255,255,255,0.82);
-    color: #2F246B;
-    border-radius: 26px;
-    padding: 17px 22px;
-    margin: 30px 0 14px;
-    font-size: 22px;
-    font-weight: 900;
-    box-shadow: 0 16px 36px rgba(60,52,137,0.08);
-    border-left: 13px solid #8B7CFF;
-    border-top: 2px solid rgba(255,255,255,0.9);
-    border-bottom: 2px solid rgba(255,255,255,0.9);
+/* Premium başlık ve renkli baloncuklar */
+.section-wrap {
+    position: relative;
+    display: inline-block;
+    margin: 44px 0 20px;
 }
 
-.chart-card {
-    background: rgba(255,255,255,0.72);
-    border-radius: 30px;
-    padding: 18px 20px 8px;
-    box-shadow: 0 18px 42px rgba(60,52,137,0.08);
-    border: 3px solid rgba(255,255,255,0.90);
-    margin-bottom: 20px;
+.section-header {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    background:
+        linear-gradient(135deg, rgba(255,255,255,0.97), rgba(255,244,252,0.84));
+    color: #24145F;
+    border-radius: 999px;
+    padding: 16px 27px 16px 18px;
+    font-size: 21px;
+    font-weight: 900;
+    box-shadow:
+        0 18px 40px rgba(60,52,137,0.12),
+        inset 0 1px 0 rgba(255,255,255,0.90);
+    border: 3px solid rgba(255,255,255,0.92);
+}
+
+.section-dot {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    background: linear-gradient(135deg, #8B7CFF, #FF6FAE, #FFD66B);
+    box-shadow: 0 6px 16px rgba(139,124,255,0.35);
+}
+
+.bubble {
+    position: absolute;
+    border-radius: 999px;
+    z-index: 1;
+    opacity: 0.95;
+}
+
+.b1 {
+    width: 26px;
+    height: 26px;
+    background: linear-gradient(135deg, #8B7CFF, #7AB8FF);
+    left: -8px;
+    top: -5px;
+}
+
+.b2 {
+    width: 18px;
+    height: 18px;
+    background: linear-gradient(135deg, #FF6FAE, #FFD66B);
+    right: -6px;
+    top: 6px;
+}
+
+.b3 {
+    width: 13px;
+    height: 13px;
+    background: linear-gradient(135deg, #7EDDC3, #A6DA70);
+    left: 18px;
+    bottom: -5px;
 }
 
 hr {
     border: none;
     height: 3px;
-    background: linear-gradient(90deg, transparent, rgba(139,124,255,0.30), rgba(255,143,179,0.30), transparent);
-    margin: 28px 0;
-}
-
-.stSelectbox > div > div {
-    border-radius: 18px !important;
+    background: linear-gradient(90deg, transparent, rgba(139,124,255,0.34), rgba(255,143,179,0.34), transparent);
+    margin: 32px 0;
 }
 
 [data-testid="stExpander"] {
     border-radius: 24px !important;
-    background: rgba(255,255,255,0.68) !important;
-    border: 2px solid rgba(255,255,255,0.85) !important;
+    background: rgba(255,255,255,0.75) !important;
+    border: 2px solid rgba(255,255,255,0.92) !important;
+}
+
+div[data-baseweb="select"] {
+    border-radius: 18px !important;
+}
+
+.stDownloadButton button {
+    border-radius: 18px !important;
+    font-weight: 900 !important;
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 with st.sidebar:
     st.markdown("## Filtreler")
@@ -353,6 +496,7 @@ with st.sidebar:
         }[x]
     )
 
+
 flt = df.copy()
 
 flt = flt[
@@ -375,6 +519,7 @@ gender_label = (
 
 st.markdown(f"""
 <div class="hero">
+  <img src="data:image/png;base64,{img_base64}" class="hero-child"/>
   <h1>Çocuklar Dijital Dünyada — TÜİK 2024</h1>
   <p>
     Seçili gözlem: <strong>{len(flt):,}</strong> / {len(df):,} çocuk ·
@@ -416,7 +561,7 @@ for col, bg, fg, label, val in kpi_data:
 
 st.markdown("---")
 
-st.markdown('<div class="section-header">Yaşa Göre Dijital Kullanım Eğrileri</div>', unsafe_allow_html=True)
+section_title("Yaşa Göre Dijital Kullanım Eğrileri")
 
 usage_cols_map = {
     "İnternet": "internet kullanım durumu",
@@ -455,12 +600,9 @@ fig_trend.update_layout(
 )
 
 fig_trend = apply_theme(fig_trend, height=375)
-
-st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.plotly_chart(fig_trend, use_container_width=True, config=PLOT_CONFIG)
-st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-header">Platform ve Cihaz Dağılımı</div>', unsafe_allow_html=True)
+section_title("Platform ve Cihaz Dağılımı")
 
 col_left, col_right = st.columns([1.1, 0.9])
 
@@ -503,7 +645,7 @@ with col_left:
             marker=dict(color=row["Renk"], size=27, line=dict(color="white", width=3)),
             text=[f"{fmt_pct(row['Oran'])}%"],
             textposition="middle right",
-            textfont=dict(size=13, color=TEXT, family="Nunito"),
+            textfont=dict(size=13, color=TEXT),
             showlegend=False,
             name=row["Platform"],
         ))
@@ -515,10 +657,7 @@ with col_left:
     )
 
     fig_plat = apply_theme(fig_plat, height=355)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_plat, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with col_right:
     devices = {
@@ -564,12 +703,9 @@ with col_right:
     )
 
     fig_dev = apply_theme(fig_dev, height=355)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_dev, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-header">Ekran Süresi Dağılımı</div>', unsafe_allow_html=True)
+section_title("Ekran Süresi Dağılımı")
 
 c1, c2 = st.columns(2)
 
@@ -586,7 +722,6 @@ with c1:
     we = flt["hafta sonu cep telefonu ortalama kullanımı"].value_counts().reindex([1, 2, 3, 4, 5]).fillna(0)
 
     fig_phone = go.Figure()
-
     fig_phone.add_trace(go.Bar(
         name="Hafta içi",
         x=list(SAAT_MAP.values()),
@@ -595,7 +730,6 @@ with c1:
         text=[f"{v:.0f}" for v in wi.values],
         textposition="outside",
     ))
-
     fig_phone.add_trace(go.Bar(
         name="Hafta sonu",
         x=list(SAAT_MAP.values()),
@@ -613,17 +747,13 @@ with c1:
     )
 
     fig_phone = apply_theme(fig_phone, height=355)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_phone, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with c2:
     wi2 = flt["hafta içi ortalama bilgisayar kullanımı"].value_counts().reindex([1, 2, 3, 4, 5]).fillna(0)
     we2 = flt["hafta sonu ortalama bilgisayar kullanımı"].value_counts().reindex([1, 2, 3, 4, 5]).fillna(0)
 
     fig_pc = go.Figure()
-
     fig_pc.add_trace(go.Bar(
         name="Hafta içi",
         x=list(SAAT_MAP.values()),
@@ -632,7 +762,6 @@ with c2:
         text=[f"{v:.0f}" for v in wi2.values],
         textposition="outside",
     ))
-
     fig_pc.add_trace(go.Bar(
         name="Hafta sonu",
         x=list(SAAT_MAP.values()),
@@ -650,12 +779,9 @@ with c2:
     )
 
     fig_pc = apply_theme(fig_pc, height=355)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_pc, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-header">İnternet Kullanım Amaçları</div>', unsafe_allow_html=True)
+section_title("İnternet Kullanım Amaçları")
 
 internet_amac = {
     "Ödev/ders": "interneti ödev/ders amaçlı kullanma",
@@ -696,12 +822,9 @@ fig_amac.update_layout(
 )
 
 fig_amac = apply_theme(fig_amac, height=375)
-
-st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.plotly_chart(fig_amac, use_container_width=True, config=PLOT_CONFIG)
-st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-header">Dijital Oyun Dünyası</div>', unsafe_allow_html=True)
+section_title("Dijital Oyun Dünyası")
 
 oc1, oc2 = st.columns(2)
 
@@ -748,10 +871,7 @@ with oc1:
     )
 
     fig_radar = apply_theme(fig_radar, height=375)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_radar, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with oc2:
     bagimlilik = {
@@ -791,12 +911,9 @@ with oc2:
     )
 
     fig_bag = apply_theme(fig_bag, height=375)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_bag, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-header">Ekranın Bedeli</div>', unsafe_allow_html=True)
+section_title("Ekranın Bedeli")
 
 etkiler = {
     "Az ders çalışma": "ekran başında fazla zaman geçirmekten az ders çalışma",
@@ -854,10 +971,7 @@ with ec1:
     )
 
     fig_etki = apply_theme(fig_etki, height=345)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_etki, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with ec2:
     is_numeric = pd.api.types.is_numeric_dtype(grouped_etki[compare_by])
@@ -903,12 +1017,9 @@ with ec2:
     )
 
     fig_compare = apply_theme(fig_compare, height=345)
-
-    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
     st.plotly_chart(fig_compare, use_container_width=True, config=PLOT_CONFIG)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-header">Telefon Kullanım Alışkanlıkları</div>', unsafe_allow_html=True)
+section_title("Telefon Kullanım Alışkanlıkları")
 
 bagimlilik_tel = {
     "Her yarım saatte kontrol": "çocuk yarım saatte bir telefonunu kontrol ediyor",
@@ -941,7 +1052,7 @@ for i, (_, row) in enumerate(tel_df.iterrows()):
             background:{bg};
             color:{fg};
             border-radius:30px;
-            padding:22px 14px;
+            padding:24px 14px;
             text-align:center;
             min-height:145px;
             display:flex;
