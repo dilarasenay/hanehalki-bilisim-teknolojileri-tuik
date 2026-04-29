@@ -12,8 +12,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-CSV_PATH = r"C:\Users\dilara\Desktop\Hane halkı bilişim tüik\fert bilişim temiz veriler\2024cocukbilisim.csv"
+from pathlib import Path
 
+CSV_PATH = Path(__file__).parent / "2024cocukbilisim.csv"
 PLOT_CONFIG = {
     "displayModeBar": False,
     "displaylogo": False,
