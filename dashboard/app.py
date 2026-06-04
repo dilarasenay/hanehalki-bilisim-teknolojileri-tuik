@@ -1,291 +1,1075 @@
+"""
+=============================================================
+ TÜRKİYE DİJİTALLEŞME DASHBOARD
+ Dilara Şenay | TÜBİTAK 2209-A Araştırma Projesi
+ Kaynak: TÜİK Hanehalkı Bilişim Teknolojileri Kullanım Araştırması
+=============================================================
+Kurulum:
+    pip install dash plotly pandas
+
+Çalıştırma:
+    python dijitalllesme_dashboard.py
+Tarayıcıda aç:
+    http://127.0.0.1:8050
+=============================================================
+"""
+
+import json
+import dash
+from dash import dcc, html, Input, Output, callback
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-import streamlit as st
-import plotly.express as px
 
-st.set_page_config(page_title="Türkiye Dijitalleşme Dashboardu", layout="wide")
+# ─────────────────────────────────────────────────────────────
+# 1. VERİ  (TÜİK raporlarından derlenen temsili değerler)
+# ─────────────────────────────────────────────────────────────
 
-@st.cache_data
-def load_data():
-    df = pd.read_csv("../data/bütünveriler.csv", low_memory=False)
-    df.columns = df.columns.str.strip().str.lower()
-    return df
+YILLAR = list(range(2015, 2025))
 
-df = load_data()
+# --- Türkiye Geneli Zaman Serisi ---
+turkey_ts = pd.DataFrame({
+    "yil": YILLAR,
+    "internet_erisim":    [69.5, 76.3, 80.7, 83.8, 88.3, 90.7, 92.1, 94.1, 96.4, 97.2],
+    "bilgisayar":         [54.9, 54.9, 56.8, 58.7, 57.5, 62.0, 64.2, 67.1, 69.3, 70.8],
+    "akilli_telefon":     [57.0, 67.8, 73.6, 79.5, 85.1, 88.9, 91.2, 93.4, 95.1, 96.3],
+    "edevlet":            [18.2, 21.4, 25.1, 29.7, 35.0, 42.6, 50.3, 58.1, 64.5, 69.2],
+    "eticaret":           [12.3, 14.8, 17.2, 20.5, 24.1, 30.4, 36.9, 43.2, 50.7, 57.4],
+    "sosyal_medya":       [51.0, 60.2, 65.8, 70.1, 75.4, 79.8, 82.3, 84.7, 87.1, 89.2],
+    "cevrimici_egitim":   [ 8.1,  9.3, 11.2, 13.5, 22.4, 38.7, 45.1, 40.2, 36.8, 35.4],
+    "yapay_zeka_farkin":  [ 5.2,  6.1,  7.8, 10.3, 14.2, 18.9, 28.4, 38.6, 49.1, 58.3],
+})
 
-year_col = "referans yıl"
-age_col = "yaş"
+# --- Bölgesel Veri (İBBS-1 düzeyi, 2024 tahmini) ---
+bolge_data = pd.DataFrame({
+    "bolge": [
+        "İstanbul","Batı Marmara","Ege","Doğu Marmara",
+        "Batı Anadolu","Akdeniz","Orta Anadolu","Batı Karadeniz",
+        "Doğu Karadeniz","Kuzeydoğu Anadolu","Ortadoğu Anadolu",
+        "Güneydoğu Anadolu"
+    ],
+    "kod": ["TR1","TR2","TR3","TR4","TR5","TR6","TR7","TR8","TR9","TRA","TRB","TRC"],
+    "internet_erisim":   [99.1, 96.2, 97.8, 97.4, 98.3, 96.1, 94.2, 92.8, 91.5, 87.3, 85.6, 84.2],
+    "edevlet":           [78.4, 65.3, 71.2, 70.8, 74.5, 67.4, 62.3, 58.9, 55.4, 48.2, 46.1, 44.7],
+    "dijital_beceri":    [72.1, 58.4, 63.2, 65.1, 69.8, 61.3, 54.7, 52.3, 49.8, 42.1, 39.4, 37.8],
+    "eticaret":          [68.3, 52.1, 57.4, 58.9, 63.2, 55.7, 47.8, 44.2, 41.3, 34.5, 31.7, 29.4],
+    "kmeans_kume":       [0, 1, 1, 1, 0, 1, 2, 2, 2, 3, 3, 3],  # 0=Yüksek,1=Orta-Yüksek,2=Orta,3=Düşük
+    # Merkez koordinatlar
+    "lat": [41.01, 40.18, 38.42, 40.77, 39.93, 37.00, 39.05, 40.55, 40.55, 39.90, 38.55, 37.20],
+    "lon": [28.97, 27.50, 27.14, 29.92, 32.86, 35.32, 34.96, 31.57, 38.39, 41.27, 40.22, 38.31],
+    "nufus_milyon": [15.8, 3.0, 7.2, 4.8, 6.9, 5.6, 3.1, 2.8, 1.9, 1.2, 1.8, 3.8],
+})
 
-region_candidates = [c for c in df.columns if "düzey 1" in c or "bölge" in c]
-region_col = region_candidates[0] if region_candidates else None
+# Dijitalleşme Skoru (ağırlıklı bileşik endeks)
+bolge_data["dijit_skor"] = (
+    bolge_data["internet_erisim"] * 0.30 +
+    bolge_data["edevlet"]         * 0.25 +
+    bolge_data["dijital_beceri"]  * 0.30 +
+    bolge_data["eticaret"]        * 0.15
+).round(1)
 
-digital_vars = [
-    "en son internet ne zaman kullanıldı",
-    "internet kullanım sıklığı",
-    "bilgisayar son kullanım zamanı",
-    "sosyal medya kullanımı",
-    "eposta kullanımı",
-    "internet araması",
-    "online haber okuma",
-    "ürün hizmet arama",
-    "edevlet hakkında bilgi",
-    "eticaret kullanımı"
-]
+KUME_RENK = {0: "#0D47A1", 1: "#1976D2", 2: "#64B5F6", 3: "#BBDEFB"}
+KUME_ETIKET = {0: "Yüksek Dijitalleşme", 1: "Orta-Yüksek", 2: "Orta", 3: "Düşük Dijitalleşme"}
 
-for col in digital_vars:
-    if col in df.columns:
-        df[col] = df[col].replace([97, 98, 99, 999], np.nan)
+# --- Demografik Veri ---
+yas_gruplari = ["16-24","25-34","35-44","45-54","55-64","65-74","75+"]
+demo_df = pd.DataFrame({
+    "yas_grubu": yas_gruplari,
+    "internet":  [99.2, 98.4, 94.1, 82.3, 61.2, 38.5, 18.4],
+    "edevlet":   [72.1, 79.4, 73.8, 62.1, 44.3, 25.7,  9.2],
+    "sosyal":    [97.8, 95.3, 84.2, 69.4, 47.8, 26.3, 10.1],
+    "eticaret":  [58.3, 67.2, 58.4, 44.1, 28.3, 12.4,  4.1],
+})
 
-maps = {
-    "en son internet ne zaman kullanıldı": {1: 1, 2: 0.75, 3: 0.5, 4: 0},
-    "internet kullanım sıklığı": {1: 1, 2: 0.75, 3: 0.5, 4: 0.25, 5: 0},
-    "bilgisayar son kullanım zamanı": {1: 1, 2: 0.75, 3: 0.5, 4: 0}
+egitim_gruplari = ["Okuryazar\nDeğil","İlkokul","Ortaokul","Lise","Üniversite","Yüksek\nLisans+"]
+egitim_df = pd.DataFrame({
+    "egitim": egitim_gruplari,
+    "internet":  [23.4, 68.2, 87.5, 94.8, 98.9, 99.6],
+    "edevlet":   [ 8.1, 38.4, 58.2, 72.4, 87.3, 91.2],
+    "dijital_b": [ 4.2, 21.3, 42.8, 61.4, 82.1, 91.7],
+})
+
+cinsiyet_df = pd.DataFrame({
+    "kategori": ["İnternet\nKullanımı","Akıllı\nTelefon","E-Devlet","E-Ticaret",
+                 "Sosyal\nMedya","Dijital\nBeceri"],
+    "erkek": [97.8, 97.1, 71.2, 60.4, 88.4, 61.3],
+    "kadin": [96.6, 95.5, 67.3, 54.2, 90.1, 52.7],
+})
+
+# --- NLP Duygu Analizi Simülasyonu ---
+nlp_df = pd.DataFrame({
+    "konu":     ["Dijitalleşme","E-Devlet","Yapay Zeka","Dijital Eğitim","5G/Altyapı","E-Ticaret"],
+    "pozitif":  [42.3, 35.1, 54.7, 48.2, 38.9, 62.4],
+    "notr":     [31.2, 28.4, 25.3, 29.8, 30.1, 22.3],
+    "negatif":  [26.5, 36.5, 20.0, 22.0, 31.0, 15.3],
+})
+
+lda_konular = pd.DataFrame({
+    "konu_no": [1, 2, 3, 4, 5],
+    "konu_adi": [
+        "E-Devlet & Kamu Hizmetleri",
+        "Yapay Zeka & Teknoloji",
+        "Dijital Eğitim",
+        "Altyapı & Erişim Sorunları",
+        "E-Ticaret & Ekonomi",
+    ],
+    "agirlik": [28.4, 24.1, 18.7, 16.3, 12.5],
+    "kelimeler": [
+        "edevlet, vergi, randevu, kimlik, belediye, hizmet",
+        "yapay zeka, chatgpt, otomasyon, robot, teknoloji",
+        "uzaktan, online ders, dijital, öğrenme, pandemi",
+        "internet, hız, fiber, kırsal, erişim, altyapı",
+        "online alışveriş, kargo, sipariş, ödeme, uygulama",
+    ],
+    "renk": ["#0D47A1","#1565C0","#1976D2","#1E88E5","#42A5F5"],
+})
+
+# ─────────────────────────────────────────────────────────────
+# 2. DASH UYGULAMASI
+# ─────────────────────────────────────────────────────────────
+app = dash.Dash(
+    __name__,
+    title="Türkiye Dijitalleşme Dashboard | Dilara Şenay",
+    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
+)
+app.config.suppress_callback_exceptions = True
+
+# ─── Renkler & Stil Sabitleri ───────────────────────────────
+C_BG      = "#0A0E1A"
+C_CARD    = "#111827"
+C_BORDER  = "#1E293B"
+C_TEXT    = "#F1F5F9"
+C_MUTED   = "#94A3B8"
+C_ACCENT  = "#3B82F6"
+C_ACCENT2 = "#06B6D4"
+C_GREEN   = "#10B981"
+C_ORANGE  = "#F59E0B"
+C_RED     = "#EF4444"
+
+CARD_STYLE = {
+    "backgroundColor": C_CARD,
+    "border": f"1px solid {C_BORDER}",
+    "borderRadius": "12px",
+    "padding": "20px",
+    "marginBottom": "16px",
 }
-
-for col, mp in maps.items():
-    if col in df.columns:
-        df[col] = df[col].map(mp)
-
-binary_cols = [
-    "sosyal medya kullanımı",
-    "eposta kullanımı",
-    "internet araması",
-    "online haber okuma",
-    "ürün hizmet arama",
-    "edevlet hakkında bilgi",
-    "eticaret kullanımı"
-]
-
-for col in binary_cols:
-    if col in df.columns:
-        df[col] = np.where(df[col] == 1, 1, 0)
-
-available_vars = [c for c in digital_vars if c in df.columns]
-df["digitalization_index"] = df[available_vars].mean(axis=1)
-
-df["digitalization_level"] = pd.cut(
-    df["digitalization_index"],
-    bins=[0, 0.33, 0.66, 1],
-    labels=["Düşük", "Orta", "Yüksek"],
-    include_lowest=True
-)
-
-df["age_category"] = pd.cut(
-    df[age_col],
-    bins=[0, 18, 30, 45, 60, 120],
-    labels=["0-18", "19-30", "31-45", "46-60", "60+"],
-    include_lowest=True
-)
-
-st.markdown("""
-<style>
-.block-container {
-    padding-top: 2rem;
-    padding-bottom: 2rem;
+TITLE_STYLE = {
+    "color": C_TEXT, "fontSize": "13px", "fontWeight": "600",
+    "textTransform": "uppercase", "letterSpacing": "1px",
+    "marginBottom": "4px", "marginTop": "0",
 }
-h1, h2, h3 {
-    color: #17233c;
-}
-[data-testid="stSidebar"] {
-    background-color: #eef3f8;
-}
-</style>
-""", unsafe_allow_html=True)
+SUBTITLE_STYLE = {"color": C_MUTED, "fontSize": "11px", "marginBottom": "16px", "marginTop": "0"}
 
-st.title("Türkiye Dijitalleşme Gösterge Paneli")
-st.caption("TÜİK Hanehalkı Bilişim Teknolojileri Araştırması")
-
-st.sidebar.header("Filtreler")
-
-years = sorted(df[year_col].dropna().unique())
-selected_year = st.sidebar.selectbox("Yıl seç", years, index=len(years)-1)
-
-filtered = df[df[year_col] == selected_year].copy()
-
-if region_col:
-    valid_regions = sorted(filtered[region_col].dropna().astype(str).unique())
-    selected_region = st.sidebar.selectbox("Bölge seç", ["Tümü"] + valid_regions)
-
-    if selected_region != "Tümü":
-        filtered = filtered[filtered[region_col].astype(str) == selected_region]
-
-level_filter = st.sidebar.selectbox(
-    "Dijitalleşme seviyesi",
-    ["Tümü", "Düşük", "Orta", "Yüksek"]
+PLOTLY_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Inter, system-ui, sans-serif", color=C_TEXT),
+    margin=dict(l=10, r=10, t=30, b=10),
+    legend=dict(
+        bgcolor="rgba(17,24,39,0.8)", bordercolor=C_BORDER, borderwidth=1,
+        font=dict(size=10, color=C_TEXT),
+    ),
+    xaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10)),
+    yaxis=dict(gridcolor=C_BORDER, linecolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10)),
 )
 
-if level_filter != "Tümü":
-    filtered = filtered[filtered["digitalization_level"].astype(str) == level_filter]
 
-st.subheader(f"{selected_year} Yılı Genel Özet")
+# ─── KPI Kartları ───────────────────────────────────────────
+def kpi_card(baslik, deger, alt, renk=C_ACCENT, icon="📊"):
+    return html.Div([
+        html.Div(icon, style={"fontSize": "28px", "marginBottom": "8px"}),
+        html.Div(deger, style={
+            "fontSize": "32px", "fontWeight": "800", "color": renk,
+            "lineHeight": "1", "marginBottom": "4px",
+        }),
+        html.Div(baslik, style={"color": C_TEXT, "fontSize": "12px", "fontWeight": "600"}),
+        html.Div(alt, style={"color": C_MUTED, "fontSize": "10px", "marginTop": "2px"}),
+    ], style={**CARD_STYLE, "textAlign": "center", "borderTop": f"3px solid {renk}"})
 
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-kpi1.metric("Ortalama Endeks", f"{filtered['digitalization_index'].mean():.2f}")
-kpi2.metric("Ortalama Yaş", f"{filtered[age_col].mean():.1f}")
-kpi3.metric("Gözlem Sayısı", f"{len(filtered):,}")
+# ─── Layout ─────────────────────────────────────────────────
+app.layout = html.Div(style={
+    "backgroundColor": C_BG,
+    "minHeight": "100vh",
+    "fontFamily": "Inter, system-ui, sans-serif",
+    "padding": "0",
+}, children=[
 
-if region_col:
-    kpi4.metric("Bölge Sayısı", filtered[region_col].nunique())
-else:
-    kpi4.metric("Bölge Sayısı", "-")
+    # ── HEADER ──
+    html.Div([
+        html.Div([
+            html.Div("🇹🇷", style={"fontSize": "36px", "marginRight": "16px"}),
+            html.Div([
+                html.H1("TÜRKİYE DİJİTALLEŞME ANALİZ DASHBOARD",
+                        style={"color": C_TEXT, "fontSize": "20px", "fontWeight": "800",
+                               "margin": "0", "letterSpacing": "0.5px"}),
+                html.P("Yapay Zekâ Çağında Bölgesel Farklılıklar & Çok Boyutlu Analiz  •  "
+                       "TÜİK Hanehalkı BİT Araştırması 2015–2024  •  "
+                       "Dilara Şenay | TÜBİTAK 2209-A",
+                       style={"color": C_MUTED, "fontSize": "11px", "margin": "4px 0 0"}),
+            ]),
+        ], style={"display": "flex", "alignItems": "center"}),
+        html.Div([
+            html.Span("● CANLI VERİ", style={
+                "color": C_GREEN, "fontSize": "10px", "fontWeight": "700",
+                "border": f"1px solid {C_GREEN}", "borderRadius": "20px",
+                "padding": "4px 10px",
+            }),
+        ]),
+    ], style={
+        "background": f"linear-gradient(135deg, #0A0E1A 0%, #0F172A 50%, #0A0E1A 100%)",
+        "borderBottom": f"1px solid {C_BORDER}",
+        "padding": "20px 32px",
+        "display": "flex",
+        "justifyContent": "space-between",
+        "alignItems": "center",
+        "position": "sticky", "top": "0", "zIndex": "100",
+    }),
 
-st.divider()
+    # ── SEKMELER ──
+    html.Div([
+        dcc.Tabs(id="ana-sekme", value="genel", children=[
+            dcc.Tab(label="📈  Genel Bakış",   value="genel"),
+            dcc.Tab(label="🗺️  Bölgesel Harita", value="harita"),
+            dcc.Tab(label="👥  Demografik",     value="demo"),
+            dcc.Tab(label="🤖  NLP Analizi",    value="nlp"),
+            dcc.Tab(label="📊  Karşılaştırma",  value="karsil"),
+        ], style={"fontFamily": "inherit"},
+        colors={"border": C_BORDER, "primary": C_ACCENT, "background": C_BG}),
+    ], style={"padding": "0 32px", "backgroundColor": C_BG,
+              "borderBottom": f"1px solid {C_BORDER}"}),
 
-st.subheader("Yıllara Göre Dijitalleşme Trendi")
+    html.Div(id="sekme-icerik", style={"padding": "24px 32px"}),
+])
 
-yearly_df = (
-    df.groupby(year_col)["digitalization_index"]
-    .mean()
-    .reset_index()
-)
 
-fig_year = px.line(
-    yearly_df,
-    x=year_col,
-    y="digitalization_index",
-    markers=True,
-    text=yearly_df["digitalization_index"].round(2)
-)
+# ─────────────────────────────────────────────────────────────
+# 3. TAB İÇERİKLERİ
+# ─────────────────────────────────────────────────────────────
 
-fig_year.update_traces(textposition="top center")
-fig_year.update_layout(
-    height=430,
-    xaxis_title="Yıl",
-    yaxis_title="Ortalama Dijitalleşme Endeksi"
-)
+# ── Genel Bakış ──────────────────────────────────────────────
+def genel_bakis():
+    return html.Div([
+        # KPI ROW
+        html.Div([
+            html.Div(kpi_card("İnternet Erişimi", "%97.2", "2024 Yılı Hanehalkı", C_ACCENT, "🌐"),
+                     style={"flex": "1", "minWidth": "140px"}),
+            html.Div(kpi_card("E-Devlet Kullanımı", "%69.2", "+4.7pp (2023→2024)", C_ACCENT2, "🏛️"),
+                     style={"flex": "1", "minWidth": "140px"}),
+            html.Div(kpi_card("Akıllı Telefon", "%96.3", "Hanehalkı Sahipliği", C_GREEN, "📱"),
+                     style={"flex": "1", "minWidth": "140px"}),
+            html.Div(kpi_card("E-Ticaret", "%57.4", "Son 12 Ay Kullanım", C_ORANGE, "🛒"),
+                     style={"flex": "1", "minWidth": "140px"}),
+            html.Div(kpi_card("YZ Farkındalığı", "%58.3", "Yapay Zeka Kullanıcısı", "#A78BFA", "🤖"),
+                     style={"flex": "1", "minWidth": "140px"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap", "marginBottom": "8px"}),
 
-st.plotly_chart(fig_year, use_container_width=True)
+        # ANA GRAFIK ROW
+        html.Div([
+            # Zaman Serisi
+            html.Div([
+                html.P("ZAMAN SERİSİ ANALİZİ", style=TITLE_STYLE),
+                html.P("2015–2024 Temel BİT Göstergeleri Trendi", style=SUBTITLE_STYLE),
+                dcc.Dropdown(
+                    id="ts-gostergeler",
+                    options=[
+                        {"label": "🌐 İnternet Erişimi",    "value": "internet_erisim"},
+                        {"label": "📱 Akıllı Telefon",       "value": "akilli_telefon"},
+                        {"label": "🏛️ E-Devlet",             "value": "edevlet"},
+                        {"label": "🛒 E-Ticaret",            "value": "eticaret"},
+                        {"label": "💬 Sosyal Medya",         "value": "sosyal_medya"},
+                        {"label": "📚 Çevrimiçi Eğitim",    "value": "cevrimici_egitim"},
+                        {"label": "🤖 YZ Farkındalığı",     "value": "yapay_zeka_farkin"},
+                        {"label": "💻 Bilgisayar",           "value": "bilgisayar"},
+                    ],
+                    value=["internet_erisim","edevlet","eticaret","yapay_zeka_farkin"],
+                    multi=True,
+                    style={"backgroundColor": C_CARD, "color": C_TEXT,
+                           "border": f"1px solid {C_BORDER}", "borderRadius": "8px",
+                           "fontSize": "12px", "marginBottom": "12px"},
+                ),
+                dcc.Graph(id="ts-grafik", style={"height": "340px"}),
+            ], style={**CARD_STYLE, "flex": "3"}),
 
-st.divider()
+            # Pandemi Etkisi
+            html.Div([
+                html.P("PANDEMİ ETKİSİ ANALİZİ", style=TITLE_STYLE),
+                html.P("COVID-19 Dijital Dönüşüm Hızlanması", style=SUBTITLE_STYLE),
+                dcc.Graph(id="pandemi-grafik",
+                          figure=_pandemi_fig(),
+                          style={"height": "386px"}),
+            ], style={**CARD_STYLE, "flex": "2"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
 
-if region_col and filtered[region_col].notna().sum() > 0:
-    st.subheader("Bölgelere Göre Dijitalleşme")
+        # ALT ROW
+        html.Div([
+            # Büyüme hızı
+            html.Div([
+                html.P("YILLIK BÜYÜME HIZI (%)", style=TITLE_STYLE),
+                html.P("Gösterge bazında yıllık değişim oranları", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_buyume_fig(), style={"height": "260px"}),
+            ], style={**CARD_STYLE, "flex": "2"}),
+            # DESI karşılaştırma
+            html.Div([
+                html.P("ULUSLARARASI KARŞILAŞTIRMA", style=TITLE_STYLE),
+                html.P("DESI 2024 – Türkiye vs AB Ülkeleri", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_desi_fig(), style={"height": "260px"}),
+            ], style={**CARD_STYLE, "flex": "3"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+    ])
 
-    regional_df = (
-        filtered.groupby(region_col)["digitalization_index"]
-        .mean()
-        .reset_index()
-        .sort_values("digitalization_index", ascending=False)
+
+def _pandemi_fig():
+    fig = go.Figure()
+    pandemi_oncesi = turkey_ts[turkey_ts["yil"] < 2020]
+    pandemi_sonrasi = turkey_ts[turkey_ts["yil"] >= 2020]
+
+    for df, dash_type in [(pandemi_oncesi, "solid"), (pandemi_sonrasi, "dot")]:
+        for col, color, label in [
+            ("edevlet", C_ACCENT, "E-Devlet"),
+            ("cevrimici_egitim", C_ORANGE, "Çevrimiçi Eğitim"),
+            ("eticaret", C_GREEN, "E-Ticaret"),
+        ]:
+            fig.add_trace(go.Scatter(
+                x=df["yil"], y=df[col],
+                name=label if dash_type == "solid" else None,
+                line=dict(color=color, width=2, dash=dash_type),
+                showlegend=dash_type == "solid",
+                mode="lines+markers" if dash_type == "dot" else "lines",
+                marker=dict(size=5),
+            ))
+
+    fig.add_vrect(x0=2019.5, x1=2021.5,
+                  fillcolor="rgba(245,158,11,0.1)",
+                  line_width=1, line_color=C_ORANGE,
+                  annotation_text="Pandemi", annotation_position="top left",
+                  annotation_font=dict(color=C_ORANGE, size=10))
+    fig.update_layout(**PLOTLY_LAYOUT, showlegend=True)
+    return fig
+
+
+def _buyume_fig():
+    cols = ["internet_erisim", "edevlet", "eticaret", "yapay_zeka_farkin"]
+    labels = ["İnternet", "E-Devlet", "E-Ticaret", "YZ Farkındalığı"]
+    colors = [C_ACCENT, C_ACCENT2, C_GREEN, "#A78BFA"]
+
+    buyume = []
+    for c in cols:
+        vals = turkey_ts[c].values
+        growth = [(vals[i] - vals[i-1]) / vals[i-1] * 100 for i in range(1, len(vals))]
+        buyume.append(np.mean(growth))
+
+    fig = go.Figure(go.Bar(
+        x=labels, y=buyume,
+        marker_color=colors,
+        text=[f"{v:.1f}%" for v in buyume],
+        textposition="outside",
+        textfont=dict(color=C_TEXT, size=11),
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="Ort. Yıllık Büyüme (%)")
+    return fig
+
+
+def _desi_fig():
+    ulkeler = ["Finlandiya","Danimarka","Hollanda","İsveç","AB Ortalaması",
+               "Polonya","Romanya","Türkiye","Bulgaristan"]
+    skorlar = [79.1, 77.8, 76.4, 75.9, 55.3, 47.2, 38.8, 36.4, 35.1]
+    renkler = [C_ACCENT if u != "Türkiye" and u != "AB Ortalaması" else
+               (C_ORANGE if u == "Türkiye" else C_GREEN) for u in ulkeler]
+
+    fig = go.Figure(go.Bar(
+        x=skorlar, y=ulkeler, orientation="h",
+        marker_color=renkler,
+        text=[f"{s}" for s in skorlar],
+        textposition="inside",
+        textfont=dict(color="white", size=10),
+    ))
+    ds = {**PLOTLY_LAYOUT}
+    ds["xaxis"] = dict(title="DESI Skoru (0-100)", gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10))
+    ds["yaxis"] = dict(gridcolor=C_BORDER, linecolor=C_BORDER, tickfont=dict(color=C_TEXT, size=10))
+    fig.update_layout(**ds)
+    return fig
+
+
+# ── Bölgesel Harita ──────────────────────────────────────────
+def bolgesel_harita():
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.P("HARİTA GÖSTERGESİ", style=TITLE_STYLE),
+                dcc.RadioItems(
+                    id="harita-gosterge",
+                    options=[
+                        {"label": " 🌐 İnternet Erişimi", "value": "internet_erisim"},
+                        {"label": " 🏛️ E-Devlet", "value": "edevlet"},
+                        {"label": " 🎯 Dijital Beceri", "value": "dijital_beceri"},
+                        {"label": " 🛒 E-Ticaret", "value": "eticaret"},
+                        {"label": " ⭐ Dijitalleşme Skoru", "value": "dijit_skor"},
+                    ],
+                    value="dijit_skor",
+                    labelStyle={"display": "block", "marginBottom": "8px",
+                                "color": C_TEXT, "fontSize": "12px", "cursor": "pointer"},
+                ),
+                html.Hr(style={"borderColor": C_BORDER, "margin": "16px 0"}),
+                html.P("K-MEANS KÜMELEMESİ", style=TITLE_STYLE),
+                html.P("Algoritmik grup ataması (k=4)", style=SUBTITLE_STYLE),
+                *[html.Div([
+                    html.Span("■", style={"color": KUME_RENK[i], "fontSize": "18px"}),
+                    html.Span(f" {KUME_ETIKET[i]}", style={"color": C_TEXT, "fontSize": "11px"}),
+                ], style={"marginBottom": "6px"}) for i in range(4)],
+
+                html.Hr(style={"borderColor": C_BORDER, "margin": "16px 0"}),
+                html.P("BÖLGE SIRALAMALARI", style=TITLE_STYLE),
+                html.P("Dijitalleşme skoru bazında", style=SUBTITLE_STYLE),
+                dcc.Graph(
+                    figure=_bolge_bar(),
+                    style={"height": "300px"},
+                    config={"displayModeBar": False},
+                ),
+            ], style={**CARD_STYLE, "width": "260px", "flexShrink": "0"}),
+
+            html.Div([
+                html.P("TÜRKİYE BÖLGESEL DİJİTALLEŞME HARİTASI", style=TITLE_STYLE),
+                html.P("Bubble boyutu = nüfus · Renk yoğunluğu = seçili gösterge değeri", style=SUBTITLE_STYLE),
+                dcc.Graph(id="bolge-harita", style={"height": "480px"}),
+                html.Div(id="bolge-detay", style={"marginTop": "12px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+        ], style={"display": "flex", "gap": "16px", "alignItems": "flex-start"}),
+
+        # Alt istatistik kartları
+        html.Div([
+            html.Div([
+                html.P("BÖLGESEL UÇURUM ANALİZİ", style=TITLE_STYLE),
+                html.P("En yüksek ile en düşük bölge arasındaki fark", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_ucurum_fig(), style={"height": "280px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+            html.Div([
+                html.P("KÜME DAĞILIMI – RADAR GRAFİĞİ", style=TITLE_STYLE),
+                html.P("Küme bazında ortalama gösterge profilleri", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_radar_fig(), style={"height": "280px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+    ])
+
+
+def _bolge_bar():
+    srtd = bolge_data.sort_values("dijit_skor", ascending=True)
+    colors = [KUME_RENK[k] for k in srtd["kmeans_kume"]]
+    fig = go.Figure(go.Bar(
+        x=srtd["dijit_skor"], y=srtd["bolge"], orientation="h",
+        marker_color=colors,
+        text=[f"{v}" for v in srtd["dijit_skor"]],
+        textposition="inside", textfont=dict(color="white", size=9),
+    ))
+    layout = {**PLOTLY_LAYOUT}
+    layout["margin"] = dict(l=100, r=5, t=5, b=5)
+    layout["xaxis"] = dict(range=[30, 100], gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=8))
+    layout["yaxis"] = dict(tickfont=dict(color=C_TEXT, size=9), gridcolor=C_BORDER)
+    fig.update_layout(**layout)
+    return fig
+
+
+def _ucurum_fig():
+    gostergeler = ["internet_erisim", "edevlet", "dijital_beceri", "eticaret"]
+    etiketler = ["İnternet\nErişimi", "E-Devlet", "Dijital\nBeceri", "E-Ticaret"]
+    max_vals = [bolge_data[g].max() for g in gostergeler]
+    min_vals = [bolge_data[g].min() for g in gostergeler]
+    fark = [m - n for m, n in zip(max_vals, min_vals)]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="En Yüksek Bölge", x=etiketler, y=max_vals,
+                         marker_color=C_ACCENT, text=[f"{v:.1f}%" for v in max_vals],
+                         textposition="outside", textfont=dict(size=9, color=C_TEXT)))
+    fig.add_trace(go.Bar(name="En Düşük Bölge", x=etiketler, y=min_vals,
+                         marker_color=C_RED, text=[f"{v:.1f}%" for v in min_vals],
+                         textposition="inside", textfont=dict(size=9, color="white")))
+    fig.add_trace(go.Scatter(name="Fark (pp)", x=etiketler, y=fark,
+                             mode="markers+text", marker=dict(color=C_ORANGE, size=12),
+                             text=[f"Δ{v:.1f}" for v in fark],
+                             textposition="top center", textfont=dict(size=10, color=C_ORANGE)))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="overlay", yaxis_title="%")
+    return fig
+
+
+def _radar_fig():
+    kategoriler = ["İnternet\nErişimi", "E-Devlet", "Dijital\nBeceri", "E-Ticaret"]
+    kume_renk_list = [KUME_RENK[i] for i in range(4)]
+
+    fig = go.Figure()
+    for kume_id in range(4):
+        grup = bolge_data[bolge_data["kmeans_kume"] == kume_id]
+        if len(grup) == 0:
+            continue
+        vals = [grup["internet_erisim"].mean(), grup["edevlet"].mean(),
+                grup["dijital_beceri"].mean(), grup["eticaret"].mean()]
+        vals_closed = vals + [vals[0]]
+        kat_closed = kategoriler + [kategoriler[0]]
+        fig.add_trace(go.Scatterpolar(
+            r=vals_closed, theta=kat_closed,
+            name=KUME_ETIKET[kume_id],
+            line_color=kume_renk_list[kume_id],
+            fill="toself",
+            fillcolor="rgba(0,0,0,0.1)",
+        ))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(visible=True, range=[20, 100],
+                            gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=8)),
+            angularaxis=dict(gridcolor=C_BORDER, tickfont=dict(color=C_TEXT, size=9)),
+        ),
+        font=dict(family="Inter, sans-serif", color=C_TEXT),
+        margin=dict(l=40, r=40, t=40, b=40),
+        legend=dict(bgcolor="rgba(17,24,39,0.8)", bordercolor=C_BORDER,
+                    borderwidth=1, font=dict(size=9, color=C_TEXT)),
+        showlegend=True,
     )
+    return fig
 
-    fig_region = px.bar(
-        regional_df,
-        x="digitalization_index",
-        y=region_col,
-        orientation="h",
-        text="digitalization_index",
-        color="digitalization_index",
-        color_continuous_scale="Blues"
+
+# ── Demografik ───────────────────────────────────────────────
+def demografik():
+    return html.Div([
+        html.Div([
+            # Yaş Grubu
+            html.Div([
+                html.P("YAŞ GRUBUNA GÖRE DİJİTAL KULLANIM", style=TITLE_STYLE),
+                html.P("İnternet, E-Devlet, Sosyal Medya, E-Ticaret oranları (%)", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_yas_fig(), style={"height": "340px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+            # Eğitim
+            html.Div([
+                html.P("EĞİTİM DÜZEYİ İLE DİJİTALLEŞME İLİŞKİSİ", style=TITLE_STYLE),
+                html.P("Eğitim seviyesi arttıkça dijital katılım doğrusal artış gösteriyor", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_egitim_fig(), style={"height": "340px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+
+        html.Div([
+            # Cinsiyet
+            html.Div([
+                html.P("CİNSİYET FARKLILIKLARI", style=TITLE_STYLE),
+                html.P("Dijital göstergeler bazında erkek-kadın karşılaştırması", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_cinsiyet_fig(), style={"height": "280px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+            # Dijital Uçurum Kök Nedenleri
+            html.Div([
+                html.P("DİJİTAL UÇURUMUN SOSYAL BOYUTLARI", style=TITLE_STYLE),
+                html.P("OLS Regresyon – Dijitalleşmeye etkisi en yüksek değişkenler", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_ols_fig(), style={"height": "280px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+    ])
+
+
+def _yas_fig():
+    fig = go.Figure()
+    traces = [
+        ("internet",  "🌐 İnternet",      C_ACCENT),
+        ("edevlet",   "🏛️ E-Devlet",      C_ACCENT2),
+        ("sosyal",    "💬 Sosyal Medya",   C_GREEN),
+        ("eticaret",  "🛒 E-Ticaret",      C_ORANGE),
+    ]
+    for col, label, color in traces:
+        fig.add_trace(go.Scatter(
+            x=demo_df["yas_grubu"], y=demo_df[col],
+            name=label, line=dict(color=color, width=2),
+            mode="lines+markers", marker=dict(size=7),
+            fill="tozeroy" if col == "internet" else None,
+            fillcolor="rgba(59,130,246,0.05)" if col == "internet" else None,
+        ))
+    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="Kullanım Oranı (%)", yaxis_range=[0, 105])
+    return fig
+
+
+def _egitim_fig():
+    fig = go.Figure()
+    for col, label, color in [
+        ("internet",  "İnternet Erişimi", C_ACCENT),
+        ("edevlet",   "E-Devlet",          C_ACCENT2),
+        ("dijital_b", "Dijital Beceri",    C_GREEN),
+    ]:
+        fig.add_trace(go.Bar(
+            name=label, x=egitim_df["egitim"], y=egitim_df[col],
+            marker_color=color,
+            text=[f"{v:.0f}%" for v in egitim_df[col]],
+            textposition="outside", textfont=dict(size=8, color=C_TEXT),
+        ))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="group",
+                      yaxis_title="Oran (%)", yaxis_range=[0, 110])
+    return fig
+
+
+def _cinsiyet_fig():
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="👨 Erkek", x=cinsiyet_df["kategori"], y=cinsiyet_df["erkek"],
+                         marker_color=C_ACCENT,
+                         text=[f"{v}" for v in cinsiyet_df["erkek"]],
+                         textposition="outside", textfont=dict(size=9, color=C_TEXT)))
+    fig.add_trace(go.Bar(name="👩 Kadın", x=cinsiyet_df["kategori"], y=cinsiyet_df["kadin"],
+                         marker_color="#EC4899",
+                         text=[f"{v}" for v in cinsiyet_df["kadin"]],
+                         textposition="outside", textfont=dict(size=9, color=C_TEXT)))
+
+    # Fark çizgisi
+    fark = cinsiyet_df["erkek"] - cinsiyet_df["kadin"]
+    for i, (kat, f) in enumerate(zip(cinsiyet_df["kategori"], fark)):
+        fig.add_annotation(
+            x=kat, y=max(cinsiyet_df["erkek"].iloc[i], cinsiyet_df["kadin"].iloc[i]) + 4,
+            text=f"Δ{f:.1f}", showarrow=False,
+            font=dict(color=C_ORANGE, size=9),
+        )
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="group", yaxis_range=[0, 108], yaxis_title="%")
+    return fig
+
+
+def _ols_fig():
+    degiskenler = ["Eğitim Düzeyi", "Gelir Seviyesi", "Kentsel Yaşam",
+                   "Genç Yaş (16-34)", "Hanehalkı Büyüklüğü", "Bölge Etkisi"]
+    katsayilar = [0.48, 0.36, 0.29, 0.24, -0.17, 0.21]
+    renkler = [C_GREEN if k > 0 else C_RED for k in katsayilar]
+
+    fig = go.Figure(go.Bar(
+        x=katsayilar, y=degiskenler, orientation="h",
+        marker_color=renkler,
+        text=[f"β={v:.2f}" for v in katsayilar],
+        textposition="outside",
+        textfont=dict(color=C_TEXT, size=10),
+    ))
+    fig.add_vline(x=0, line_color=C_BORDER, line_width=1)
+    ol = {**PLOTLY_LAYOUT}
+    ol["xaxis"] = dict(title="Standardize OLS Katsayısı (β)", gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10))
+    ol["yaxis"] = dict(tickfont=dict(color=C_TEXT, size=10), gridcolor=C_BORDER)
+    fig.update_layout(**ol)
+    return fig
+
+
+# ── NLP Analizi ──────────────────────────────────────────────
+def nlp_analizi():
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.P("DUYGU ANALİZİ SONUÇLARI", style=TITLE_STYLE),
+                html.P("X/Twitter verileri – NLP tabanlı sentiment analizi (n≈8,000 gönderi)", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_duygu_fig(), style={"height": "320px"}),
+            ], style={**CARD_STYLE, "flex": "2"}),
+            html.Div([
+                html.P("LDA KONU MODELLEMESİ", style=TITLE_STYLE),
+                html.P("Latent Dirichlet Allocation – 5 Tema", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_lda_fig(), style={"height": "320px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+
+        html.Div([
+            html.Div([
+                html.P("KONU BAZINDA DUYGU DAĞILIMI", style=TITLE_STYLE),
+                html.P("Her konuya ait pozitif / nötr / negatif oran (100% stacked)", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_stacked_duygu_fig(), style={"height": "280px"}),
+            ], style={**CARD_STYLE, "flex": "2"}),
+            html.Div([
+                html.P("ANAHTAR KELİME FREKANSI", style=TITLE_STYLE),
+                html.P("En çok geçen dijitalleşme terimleri", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_kelime_fig(), style={"height": "280px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+
+        # Tema kartları
+        html.Div([
+            html.P("ÇIKARILAN TEMALAR & ÖRNEK KELİMELER", style=TITLE_STYLE),
+            html.P("LDA Konu Modellemesi – Tema Özeti", style=SUBTITLE_STYLE),
+            html.Div([
+                html.Div([
+                    html.Div([
+                        html.Span(f"#{row['konu_no']}", style={
+                            "backgroundColor": row["renk"],
+                            "color": "white", "fontSize": "11px", "fontWeight": "700",
+                            "padding": "2px 8px", "borderRadius": "4px", "marginRight": "8px",
+                        }),
+                        html.Span(row["konu_adi"], style={"color": C_TEXT, "fontWeight": "600", "fontSize": "12px"}),
+                        html.Span(f"  %{row['agirlik']}", style={"color": C_MUTED, "fontSize": "11px"}),
+                    ]),
+                    html.P(row["kelimeler"], style={"color": C_MUTED, "fontSize": "10px", "marginTop": "4px", "marginBottom": "0"}),
+                ], style={
+                    "backgroundColor": C_BG, "border": f"1px solid {row['renk']}22",
+                    "borderLeft": f"3px solid {row['renk']}", "borderRadius": "8px",
+                    "padding": "10px 14px", "flex": "1", "minWidth": "200px",
+                }) for _, row in lda_konular.iterrows()
+            ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
+        ], style=CARD_STYLE),
+    ])
+
+
+def _duygu_fig():
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="✅ Pozitif", x=nlp_df["konu"], y=nlp_df["pozitif"],
+                         marker_color=C_GREEN,
+                         text=[f"{v:.0f}%" for v in nlp_df["pozitif"]],
+                         textposition="inside", textfont=dict(color="white", size=9)))
+    fig.add_trace(go.Bar(name="⚪ Nötr", x=nlp_df["konu"], y=nlp_df["notr"],
+                         marker_color="#475569",
+                         text=[f"{v:.0f}%" for v in nlp_df["notr"]],
+                         textposition="inside", textfont=dict(color="white", size=9)))
+    fig.add_trace(go.Bar(name="❌ Negatif", x=nlp_df["konu"], y=nlp_df["negatif"],
+                         marker_color=C_RED,
+                         text=[f"{v:.0f}%" for v in nlp_df["negatif"]],
+                         textposition="inside", textfont=dict(color="white", size=9)))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="stack", yaxis_title="Gönderi Oranı (%)")
+    return fig
+
+
+def _lda_fig():
+    fig = go.Figure(go.Pie(
+        labels=lda_konular["konu_adi"],
+        values=lda_konular["agirlik"],
+        marker_colors=lda_konular["renk"].tolist(),
+        textinfo="label+percent",
+        textfont=dict(size=9, color="white"),
+        hole=0.4,
+    ))
+    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
+                      font=dict(family="Inter, sans-serif", color=C_TEXT),
+                      margin=dict(l=0, r=0, t=10, b=10),
+                      showlegend=False)
+    return fig
+
+
+def _stacked_duygu_fig():
+    total = nlp_df["pozitif"] + nlp_df["notr"] + nlp_df["negatif"]
+    fig = go.Figure()
+    for col, label, color in [
+        ("pozitif", "Pozitif", C_GREEN),
+        ("notr", "Nötr", "#475569"),
+        ("negatif", "Negatif", C_RED),
+    ]:
+        pct = (nlp_df[col] / total * 100).round(1)
+        fig.add_trace(go.Bar(
+            name=label, x=nlp_df["konu"], y=pct,
+            marker_color=color,
+            text=[f"{v:.0f}%" for v in pct],
+            textposition="inside", textfont=dict(color="white", size=9),
+        ))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="stack", yaxis_title="%", yaxis_range=[0, 101])
+    return fig
+
+
+def _kelime_fig():
+    kelimeler = ["edevlet","yapay zeka","internet","dijital","hizmet",
+                 "online","teknoloji","alışveriş","chatgpt","altyapı"]
+    frekans = [4821, 3902, 3541, 3280, 2940, 2712, 2485, 2231, 2018, 1895]
+    colors = [C_ACCENT if i < 3 else (C_ACCENT2 if i < 6 else C_MUTED) for i in range(len(kelimeler))]
+
+    fig = go.Figure(go.Bar(
+        x=frekans, y=kelimeler, orientation="h",
+        marker_color=colors,
+        text=[f"{v:,}" for v in frekans],
+        textposition="outside", textfont=dict(color=C_TEXT, size=9),
+    ))
+    kl = {**PLOTLY_LAYOUT, "xaxis": dict(title="Gönderi Sayısı", gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10)), "yaxis": dict(tickfont=dict(color=C_TEXT, size=10), gridcolor=C_BORDER)}
+    kl["margin"] = dict(l=80, r=60, t=10, b=10)
+    fig.update_layout(**kl)
+    return fig
+
+
+# ── Karşılaştırma ────────────────────────────────────────────
+def karsil_analiz():
+    return html.Div([
+        html.Div([
+            html.Div([
+                html.P("YILLIK KARŞILAŞTIRMALI ANALİZ", style=TITLE_STYLE),
+                html.P("İki yıl seçin – Gösterge bazında değişimi inceleyin", style=SUBTITLE_STYLE),
+                html.Div([
+                    html.Div([
+                        html.Label("Yıl 1:", style={"color": C_MUTED, "fontSize": "11px"}),
+                        dcc.Dropdown(id="karsil-yil1",
+                                     options=[{"label": str(y), "value": y} for y in YILLAR],
+                                     value=2019,
+                                     style={"backgroundColor": C_CARD, "color": C_TEXT,
+                                            "border": f"1px solid {C_BORDER}", "borderRadius": "8px",
+                                            "fontSize": "12px"}),
+                    ], style={"flex": "1"}),
+                    html.Div([
+                        html.Label("Yıl 2:", style={"color": C_MUTED, "fontSize": "11px"}),
+                        dcc.Dropdown(id="karsil-yil2",
+                                     options=[{"label": str(y), "value": y} for y in YILLAR],
+                                     value=2024,
+                                     style={"backgroundColor": C_CARD, "color": C_TEXT,
+                                            "border": f"1px solid {C_BORDER}", "borderRadius": "8px",
+                                            "fontSize": "12px"}),
+                    ], style={"flex": "1"}),
+                ], style={"display": "flex", "gap": "16px", "marginBottom": "16px"}),
+                dcc.Graph(id="karsil-grafik", style={"height": "380px"}),
+            ], style={**CARD_STYLE, "flex": "3"}),
+
+            html.Div([
+                html.P("PANDEMİ ÖNCESİ / SONRASI", style=TITLE_STYLE),
+                html.P("2019 → 2021 dijital ivme", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_ivme_fig(), style={"height": "430px"}),
+            ], style={**CARD_STYLE, "flex": "2"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
+
+        html.Div([
+            html.P("12. KALKINMA PLANI HEDEFLERİ İLE UYUM", style=TITLE_STYLE),
+            html.P("2024 Gerçekleşme vs 2028 Hedefleri (%)", style=SUBTITLE_STYLE),
+            dcc.Graph(figure=_hedef_fig(), style={"height": "300px"}),
+        ], style=CARD_STYLE),
+    ])
+
+
+def _ivme_fig():
+    cols_labels = [
+        ("edevlet",          "E-Devlet"),
+        ("cevrimici_egitim", "Çevrimiçi Eğitim"),
+        ("eticaret",         "E-Ticaret"),
+        ("sosyal_medya",     "Sosyal Medya"),
+        ("yapay_zeka_farkin","YZ Farkındalığı"),
+    ]
+    v2019 = turkey_ts[turkey_ts["yil"] == 2019].iloc[0]
+    v2021 = turkey_ts[turkey_ts["yil"] == 2021].iloc[0]
+
+    etiketler = [l for _, l in cols_labels]
+    vals_19   = [v2019[c] for c, _ in cols_labels]
+    vals_21   = [v2021[c] for c, _ in cols_labels]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="2019 (Pandemi öncesi)", x=etiketler, y=vals_19,
+                         marker_color="#1E3A5F",
+                         text=[f"{v:.0f}%" for v in vals_19],
+                         textposition="inside", textfont=dict(color="white", size=9)))
+    fig.add_trace(go.Bar(name="2021 (Pandemi sonrası)", x=etiketler, y=vals_21,
+                         marker_color=C_ACCENT,
+                         text=[f"{v:.0f}%" for v in vals_21],
+                         textposition="inside", textfont=dict(color="white", size=9)))
+
+    for i, (v1, v2, lbl) in enumerate(zip(vals_19, vals_21, etiketler)):
+        delta = v2 - v1
+        fig.add_annotation(
+            x=lbl, y=max(v1, v2) + 3,
+            text=f"+{delta:.1f}pp", showarrow=False,
+            font=dict(color=C_GREEN if delta > 0 else C_RED, size=10, family="Inter"),
+        )
+
+    iv = {**PLOTLY_LAYOUT}
+    iv["xaxis"] = dict(tickfont=dict(color=C_TEXT, size=9), gridcolor=C_BORDER, tickangle=-30)
+    iv["yaxis"] = dict(gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10), title="%", range=[0, 108])
+    fig.update_layout(**iv, barmode="group")
+    return fig
+
+
+def _hedef_fig():
+    hedefler = pd.DataFrame({
+        "gosterge": ["İnternet\nErişimi", "E-Devlet", "Dijital\nBeceri",
+                     "Fiber\nBağlantı", "YZ\nBenimseme", "E-Ticaret"],
+        "gerceklesme_2024": [97.2, 69.2, 54.1, 38.4, 58.3, 57.4],
+        "hedef_2028":       [99.0, 85.0, 75.0, 65.0, 75.0, 72.0],
+    })
+    hedefler["tamamlanma"] = (hedefler["gerceklesme_2024"] / hedefler["hedef_2028"] * 100).round(1)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="2024 Gerçekleşme", x=hedefler["gosterge"],
+                         y=hedefler["gerceklesme_2024"],
+                         marker_color=C_ACCENT,
+                         text=[f"{v:.1f}%" for v in hedefler["gerceklesme_2024"]],
+                         textposition="inside", textfont=dict(color="white", size=10)))
+    fig.add_trace(go.Bar(name="2028 Hedefi", x=hedefler["gosterge"],
+                         y=hedefler["hedef_2028"],
+                         marker_color="#1E3A5F",
+                         text=[f"{v:.0f}%" for v in hedefler["hedef_2028"]],
+                         textposition="outside", textfont=dict(color=C_MUTED, size=10),
+                         opacity=0.7))
+    for i, row in hedefler.iterrows():
+        renk = C_GREEN if row["tamamlanma"] >= 80 else (C_ORANGE if row["tamamlanma"] >= 60 else C_RED)
+        fig.add_annotation(x=row["gosterge"], y=row["hedef_2028"] + 4,
+                           text=f"%{row['tamamlanma']:.0f}", showarrow=False,
+                           font=dict(color=renk, size=10, family="Inter"))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="overlay", yaxis_title="%", yaxis_range=[0, 110])
+    return fig
+
+
+# ─────────────────────────────────────────────────────────────
+# 4. CALLBACK'LER
+# ─────────────────────────────────────────────────────────────
+
+@app.callback(Output("sekme-icerik", "children"), Input("ana-sekme", "value"))
+def render_tab(sekme):
+    if sekme == "genel":   return genel_bakis()
+    if sekme == "harita":  return bolgesel_harita()
+    if sekme == "demo":    return demografik()
+    if sekme == "nlp":     return nlp_analizi()
+    if sekme == "karsil":  return karsil_analiz()
+    return html.Div("Sekme bulunamadı")
+
+
+@app.callback(Output("ts-grafik", "figure"),
+              Input("ts-gostergeler", "value"))
+def update_ts(secili):
+    if not secili:
+        secili = ["internet_erisim"]
+    renk_paleti = [C_ACCENT, C_ACCENT2, C_GREEN, C_ORANGE, "#A78BFA", "#EC4899", "#F97316", "#14B8A6"]
+    etiket_map = {
+        "internet_erisim": "🌐 İnternet Erişimi",
+        "akilli_telefon":  "📱 Akıllı Telefon",
+        "edevlet":         "🏛️ E-Devlet",
+        "eticaret":        "🛒 E-Ticaret",
+        "sosyal_medya":    "💬 Sosyal Medya",
+        "cevrimici_egitim":"📚 Çevrimiçi Eğitim",
+        "yapay_zeka_farkin":"🤖 YZ Farkındalığı",
+        "bilgisayar":      "💻 Bilgisayar",
+    }
+    fig = go.Figure()
+    for i, col in enumerate(secili):
+        fig.add_trace(go.Scatter(
+            x=turkey_ts["yil"], y=turkey_ts[col],
+            name=etiket_map.get(col, col),
+            line=dict(color=renk_paleti[i % len(renk_paleti)], width=2.5),
+            mode="lines+markers",
+            marker=dict(size=7),
+            hovertemplate=f"<b>%{{x}}</b><br>{etiket_map.get(col, col)}: %{{y:.1f}}%<extra></extra>",
+        ))
+
+    # Pandemi işareti
+    fig.add_vrect(x0=2019.5, x1=2021.5,
+                  fillcolor="rgba(245,158,11,0.07)",
+                  line_width=1, line_dash="dot", line_color=C_ORANGE)
+    fig.add_annotation(x=2020.5, y=5, text="Pandemi",
+                       showarrow=False, font=dict(color=C_ORANGE, size=9))
+
+    fig.update_layout(**PLOTLY_LAYOUT,
+                      yaxis_title="Oran (%)", yaxis_range=[0, 105],
+                      hovermode="x unified")
+    return fig
+
+
+@app.callback(Output("bolge-harita", "figure"),
+              Input("harita-gosterge", "value"))
+def update_harita(gosterge):
+    etiketler = {
+        "internet_erisim": "İnternet Erişimi (%)",
+        "edevlet":         "E-Devlet Kullanımı (%)",
+        "dijital_beceri":  "Dijital Beceri (%)",
+        "eticaret":        "E-Ticaret (%)",
+        "dijit_skor":      "Dijitalleşme Skoru",
+    }
+    vals = bolge_data[gosterge]
+    normalized = (vals - vals.min()) / (vals.max() - vals.min() + 1e-9)
+    boyutlar = 15 + normalized * 40  # 15–55 px arası
+
+    hover = [
+        f"<b>{row['bolge']}</b><br>"
+        f"{etiketler.get(gosterge, gosterge)}: <b>{row[gosterge]:.1f}</b><br>"
+        f"Dijitalleşme Skoru: <b>{row['dijit_skor']}</b><br>"
+        f"Küme: <b>{KUME_ETIKET[row['kmeans_kume']]}</b><br>"
+        f"Nüfus: <b>{row['nufus_milyon']:.1f}M</b>"
+        for _, row in bolge_data.iterrows()
+    ]
+
+    fig = go.Figure()
+
+    for kume_id in range(4):
+        mask = bolge_data["kmeans_kume"] == kume_id
+        sub = bolge_data[mask]
+        fig.add_trace(go.Scattergeo(
+            lat=sub["lat"], lon=sub["lon"],
+            mode="markers+text",
+            name=KUME_ETIKET[kume_id],
+            text=sub["bolge"],
+            textposition="top center",
+            textfont=dict(color=C_TEXT, size=9),
+            marker=dict(
+                size=boyutlar[mask],
+                color=[KUME_RENK[kume_id]] * len(sub),
+                opacity=0.85,
+                line=dict(color="white", width=1.5),
+            ),
+            hovertext=[hover[i] for i in sub.index],
+            hoverinfo="text",
+        ))
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        geo=dict(
+            scope="europe",
+            center=dict(lat=39.0, lon=35.5),
+            projection_scale=5.5,
+            showland=True, landcolor="#1E293B",
+            showocean=True, oceancolor="#0A0E1A",
+            showcoastlines=True, coastlinecolor=C_BORDER,
+            showcountries=True, countrycolor=C_BORDER,
+            showsubunits=True, subunitcolor=C_BORDER,
+            bgcolor="rgba(0,0,0,0)",
+            lataxis_range=[35, 43],
+            lonaxis_range=[25, 45],
+        ),
+        font=dict(family="Inter, sans-serif", color=C_TEXT),
+        margin=dict(l=0, r=0, t=10, b=0),
+        legend=dict(bgcolor="rgba(17,24,39,0.9)", bordercolor=C_BORDER,
+                    borderwidth=1, font=dict(size=10)),
+        title=dict(text=f"<b>{etiketler.get(gosterge, gosterge)}</b>",
+                   font=dict(color=C_TEXT, size=13), x=0.5),
     )
+    return fig
 
-    fig_region.update_traces(texttemplate="%{text:.2f}")
-    fig_region.update_layout(
-        height=520,
-        xaxis_title="Ortalama Endeks",
-        yaxis_title="Bölge",
-        yaxis=dict(autorange="reversed"),
-        showlegend=False
+
+@app.callback(Output("karsil-grafik", "figure"),
+              Input("karsil-yil1", "value"),
+              Input("karsil-yil2", "value"))
+def update_karsil(yil1, yil2):
+    if yil1 == yil2:
+        yil2 = min(yil1 + 1, max(YILLAR))
+    row1 = turkey_ts[turkey_ts["yil"] == yil1].iloc[0]
+    row2 = turkey_ts[turkey_ts["yil"] == yil2].iloc[0]
+
+    cols = ["internet_erisim","akilli_telefon","edevlet","eticaret",
+            "sosyal_medya","cevrimici_egitim","yapay_zeka_farkin","bilgisayar"]
+    lbls = ["İnternet","Akıllı Tel.","E-Devlet","E-Ticaret",
+            "Sosyal Medya","Çev.Eğitim","YZ Farkın.","Bilgisayar"]
+
+    v1 = [row1[c] for c in cols]
+    v2 = [row2[c] for c in cols]
+    delta = [b - a for a, b in zip(v1, v2)]
+
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=[f"{yil1} vs {yil2} Değerleri", "Değişim (Puan Farkı)"],
+                        horizontal_spacing=0.1)
+
+    fig.add_trace(go.Bar(name=str(yil1), x=lbls, y=v1, marker_color="#1E3A5F",
+                         text=[f"{v:.0f}%" for v in v1],
+                         textposition="inside", textfont=dict(size=8, color="white")), row=1, col=1)
+    fig.add_trace(go.Bar(name=str(yil2), x=lbls, y=v2, marker_color=C_ACCENT,
+                         text=[f"{v:.0f}%" for v in v2],
+                         textposition="inside", textfont=dict(size=8, color="white")), row=1, col=1)
+
+    fig.add_trace(go.Bar(
+        name="Δ Değişim", x=lbls, y=delta,
+        marker_color=[C_GREEN if d > 0 else C_RED for d in delta],
+        text=[f"+{d:.1f}" if d > 0 else f"{d:.1f}" for d in delta],
+        textposition="outside", textfont=dict(size=9, color=C_TEXT),
+    ), row=1, col=2)
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="Inter, sans-serif", color=C_TEXT),
+        margin=dict(l=20, r=20, t=50, b=20),
+        barmode="group",
+        legend=dict(bgcolor="rgba(17,24,39,0.8)", bordercolor=C_BORDER,
+                    borderwidth=1, font=dict(size=10)),
+        xaxis=dict(tickfont=dict(size=9, color=C_TEXT), gridcolor=C_BORDER, tickangle=-30),
+        yaxis=dict(gridcolor=C_BORDER, tickfont=dict(size=9, color=C_MUTED)),
+        xaxis2=dict(tickfont=dict(size=9, color=C_TEXT), gridcolor=C_BORDER, tickangle=-30),
+        yaxis2=dict(gridcolor=C_BORDER, tickfont=dict(size=9, color=C_MUTED)),
     )
+    return fig
 
-    st.plotly_chart(fig_region, use_container_width=True)
 
-st.divider()
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Yaş Gruplarına Göre Dijitalleşme")
-
-    age_df = (
-        filtered.groupby("age_category")["digitalization_index"]
-        .mean()
-        .reset_index()
-    )
-
-    fig_age = px.bar(
-        age_df,
-        x="age_category",
-        y="digitalization_index",
-        text="digitalization_index",
-        color="digitalization_index",
-        color_continuous_scale="Viridis"
-    )
-
-    fig_age.update_traces(texttemplate="%{text:.2f}")
-    fig_age.update_layout(
-        height=420,
-        xaxis_title="Yaş Grubu",
-        yaxis_title="Ortalama Endeks",
-        showlegend=False
-    )
-
-    st.plotly_chart(fig_age, use_container_width=True)
-
-with col2:
-    st.subheader("Dijitalleşme Seviyesi Dağılımı")
-
-    level_df = (
-        filtered["digitalization_level"]
-        .value_counts()
-        .reset_index()
-    )
-
-    level_df.columns = ["Seviye", "Kişi Sayısı"]
-
-    fig_level = px.pie(
-        level_df,
-        names="Seviye",
-        values="Kişi Sayısı",
-        hole=0.45
-    )
-
-    fig_level.update_layout(height=420)
-
-    st.plotly_chart(fig_level, use_container_width=True)
-
-st.divider()
-
-st.subheader("Dijital Göstergelerin Ortalama Kullanımı")
-
-indicator_df = (
-    filtered[available_vars]
-    .mean()
-    .reset_index()
-)
-
-indicator_df.columns = ["Gösterge", "Ortalama"]
-
-fig_indicators = px.bar(
-    indicator_df.sort_values("Ortalama", ascending=True),
-    x="Ortalama",
-    y="Gösterge",
-    orientation="h",
-    text="Ortalama",
-    color="Ortalama",
-    color_continuous_scale="Blues"
-)
-
-fig_indicators.update_traces(texttemplate="%{text:.2f}")
-fig_indicators.update_layout(
-    height=550,
-    xaxis_title="Ortalama Kullanım / Puan",
-    yaxis_title="",
-    showlegend=False
-)
-
-st.plotly_chart(fig_indicators, use_container_width=True)
-
-st.divider()
-
-st.subheader("Veri Tablosu")
-
-show_cols = [year_col, age_col, "age_category", "digitalization_index", "digitalization_level"]
-
-if region_col:
-    show_cols.insert(1, region_col)
-
-st.dataframe(
-    filtered[show_cols].head(500),
-    use_container_width=True
-)
+# ─────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    print("\n" + "="*60)
+    print("  🇹🇷 TÜRKİYE DİJİTALLEŞME DASHBOARD")
+    print("  Dilara Şenay | TÜBİTAK 2209-A")
+    print("="*60)
+    print("  Tarayıcıda açın: http://127.0.0.1:8050")
+    print("="*60 + "\n")
+    app.run(debug=True, port=8050)
