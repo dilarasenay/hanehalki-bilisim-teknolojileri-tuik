@@ -8,7 +8,7 @@ Kurulum:
     pip install dash plotly pandas
 
 Çalıştırma:
-    python dijitalllesme_dashboard.py
+    python app.py
 Tarayıcıda aç:
     http://127.0.0.1:8050
 =============================================================
@@ -25,59 +25,349 @@ import pandas as pd
 import numpy as np
 
 # ─────────────────────────────────────────────────────────────
-# 1. VERİ  (TÜİK raporlarından derlenen temsili değerler)
+# 1. VERİ  (CSV'den hesaplanan gerçek dashboard göstergeleri)
 # ─────────────────────────────────────────────────────────────
 
-YILLAR = list(range(2015, 2025))
+BASE_DIR = os.path.dirname(__file__)
 
-# --- Türkiye Geneli Zaman Serisi ---
-turkey_ts = pd.DataFrame({
-    "yil": YILLAR,
-    "internet_erisim":    [69.5, 76.3, 80.7, 83.8, 88.3, 90.7, 92.1, 94.1, 96.4, 97.2],
-    "bilgisayar":         [54.9, 54.9, 56.8, 58.7, 57.5, 62.0, 64.2, 67.1, 69.3, 70.8],
-    "akilli_telefon":     [57.0, 67.8, 73.6, 79.5, 85.1, 88.9, 91.2, 93.4, 95.1, 96.3],
-    "edevlet":            [18.2, 21.4, 25.1, 29.7, 35.0, 42.6, 50.3, 58.1, 64.5, 69.2],
-    "eticaret":           [12.3, 14.8, 17.2, 20.5, 24.1, 30.4, 36.9, 43.2, 50.7, 57.4],
-    "sosyal_medya":       [51.0, 60.2, 65.8, 70.1, 75.4, 79.8, 82.3, 84.7, 87.1, 89.2],
-    "cevrimici_egitim":   [ 8.1,  9.3, 11.2, 13.5, 22.4, 38.7, 45.1, 40.2, 36.8, 35.4],
-    "yapay_zeka_farkin":  [ 5.2,  6.1,  7.8, 10.3, 14.2, 18.9, 28.4, 38.6, 49.1, 58.3],
-})
+# CSV dosyasını şu adlardan biriyle arar. En ideali: dashboard/data/bütünveriler.csv
+DATA_CANDIDATES = [
+    os.path.join(BASE_DIR, "data", "bütünveriler.csv"),
+    os.path.join(BASE_DIR, "data", "butunveriler.csv"),
+    os.path.join(BASE_DIR, "data", "bütünverilerr"),
+    os.path.join(BASE_DIR, "bütünveriler.csv"),
+    os.path.join(BASE_DIR, "butunveriler.csv"),
+    os.path.join(BASE_DIR, "bütünverilerr"),
+    os.path.join(BASE_DIR, "..", "data", "bütünveriler.csv"),
+    os.path.join(BASE_DIR, "..", "data", "butunveriler.csv"),
+]
 
-# --- Bölgesel Veri (İBBS-1 düzeyi, 2024 tahmini) ---
-bolge_data = pd.DataFrame({
-    "bolge": [
-        "İstanbul","Batı Marmara","Ege","Doğu Marmara",
-        "Batı Anadolu","Akdeniz","Orta Anadolu","Batı Karadeniz",
-        "Doğu Karadeniz","Kuzeydoğu Anadolu","Ortadoğu Anadolu",
-        "Güneydoğu Anadolu"
-    ],
-    "kod": ["TR1","TR2","TR3","TR4","TR5","TR6","TR7","TR8","TR9","TRA","TRB","TRC"],
-    "internet_erisim":   [99.1, 96.2, 97.8, 97.4, 98.3, 96.1, 94.2, 92.8, 91.5, 87.3, 85.6, 84.2],
-    "edevlet":           [78.4, 65.3, 71.2, 70.8, 74.5, 67.4, 62.3, 58.9, 55.4, 48.2, 46.1, 44.7],
-    "dijital_beceri":    [72.1, 58.4, 63.2, 65.1, 69.8, 61.3, 54.7, 52.3, 49.8, 42.1, 39.4, 37.8],
-    "eticaret":          [68.3, 52.1, 57.4, 58.9, 63.2, 55.7, 47.8, 44.2, 41.3, 34.5, 31.7, 29.4],
-    "kmeans_kume":       [0, 1, 1, 1, 0, 1, 2, 2, 2, 3, 3, 3],  # 0=Yüksek,1=Orta-Yüksek,2=Orta,3=Düşük
-    # Merkez koordinatlar
-    "lat": [41.01, 40.18, 38.42, 40.77, 39.93, 37.00, 39.05, 40.55, 40.55, 39.90, 38.55, 37.20],
-    "lon": [28.97, 27.50, 27.14, 29.92, 32.86, 35.32, 34.96, 31.57, 38.39, 41.27, 40.22, 38.31],
-    "nufus_milyon": [15.8, 3.0, 7.2, 4.8, 6.9, 5.6, 3.1, 2.8, 1.9, 1.2, 1.8, 3.8],
-})
+BOLGE_ADLARI = {
+    "TR1": "İstanbul",
+    "TR2": "Batı Marmara",
+    "TR3": "Ege",
+    "TR4": "Doğu Marmara",
+    "TR5": "Batı Anadolu",
+    "TR6": "Akdeniz",
+    "TR7": "Orta Anadolu",
+    "TR8": "Batı Karadeniz",
+    "TR9": "Doğu Karadeniz",
+    "TRA": "Kuzeydoğu Anadolu",
+    "TRB": "Ortadoğu Anadolu",
+    "TRC": "Güneydoğu Anadolu",
+}
 
-# Dijitalleşme Skoru (ağırlıklı bileşik endeks)
-bolge_data["dijit_skor"] = (
-    bolge_data["internet_erisim"] * 0.30 +
-    bolge_data["edevlet"]         * 0.25 +
-    bolge_data["dijital_beceri"]  * 0.30 +
-    bolge_data["eticaret"]        * 0.15
-).round(1)
+BOLGE_KOORD = {
+    "TR1": (41.01, 28.97),
+    "TR2": (40.18, 27.50),
+    "TR3": (38.42, 27.14),
+    "TR4": (40.77, 29.92),
+    "TR5": (39.93, 32.86),
+    "TR6": (37.00, 35.32),
+    "TR7": (39.05, 34.96),
+    "TR8": (40.55, 31.57),
+    "TR9": (40.55, 38.39),
+    "TRA": (39.90, 41.27),
+    "TRB": (38.55, 40.22),
+    "TRC": (37.20, 38.31),
+}
 
 KUME_RENK = {0: "#0B4EA2", 1: "#2563EB", 2: "#7C3AED", 3: "#F97316"}
 KUME_ETIKET = {0: "Yüksek Dijitalleşme", 1: "Orta-Yüksek", 2: "Orta", 3: "Düşük Dijitalleşme"}
 
+
+def _normalize_col_name(name):
+    return str(name).strip().lower().replace("ı", "i")
+
+
+def _find_col(df, *candidates):
+    """Sütun adları küçük farklılık gösterirse doğru sütunu bulur."""
+    normalized = {_normalize_col_name(c): c for c in df.columns}
+    for cand in candidates:
+        key = _normalize_col_name(cand)
+        if key in normalized:
+            return normalized[key]
+    for cand in candidates:
+        key = _normalize_col_name(cand)
+        for ncol, original in normalized.items():
+            if key in ncol:
+                return original
+    return None
+
+
+def _num(s):
+    return pd.to_numeric(s, errors="coerce")
+
+
+def evet_orani(s):
+    """1=Evet, 2=Hayır kodlamasına göre Evet yüzdesi. Diğer kodları hesap dışı bırakır."""
+    s = _num(s)
+    s = s[s.isin([1, 2])]
+    if len(s) == 0:
+        return np.nan
+    return float((s.eq(1).mean() * 100).round(1))
+
+
+def kullanim_siklik_orani(s):
+    """Sıklık sorularında 1-4 kullanım, 6/9/13 gibi kodlar kullanım dışı/cevapsız kabul edilir."""
+    s = _num(s)
+    s = s[s.notna()]
+    if len(s) == 0:
+        return np.nan
+    return float((s.isin([1, 2, 3, 4]).mean() * 100).round(1))
+
+
+def satir_bazli_evet_orani(df, cols):
+    """Birden fazla 1/2 sütununda en az bir evet oranı."""
+    cols = [c for c in cols if c in df.columns]
+    if not cols:
+        return np.nan
+    sub = df[cols].apply(pd.to_numeric, errors="coerce")
+    valid = sub.isin([1, 2]).any(axis=1)
+    if valid.sum() == 0:
+        return np.nan
+    return float((sub.eq(1).any(axis=1)[valid].mean() * 100).round(1))
+
+
+def _safe_indicator(df, col, mode="evet"):
+    if col is None or col not in df.columns:
+        return np.nan
+    if mode == "freq":
+        return kullanim_siklik_orani(df[col])
+    return evet_orani(df[col])
+
+
+def _ibbs_columns(df):
+    """CSV içinde aynı anlama gelen birden fazla İBBS-1 sütunu varsa hepsini bulur."""
+    cols = []
+    wanted = [
+        "istatistiki bölge birimleri sınıflaması(düzey 1)",
+        "istatistiki bölge birimleri sınıflaması (düzey 1)",
+    ]
+    for col in df.columns:
+        norm = _normalize_col_name(col)
+        if any(_normalize_col_name(w) == norm for w in wanted):
+            cols.append(col)
+    # Esnek yakalama: sütun adında hem "bölge" hem "düzey 1" geçiyorsa da al.
+    for col in df.columns:
+        norm = _normalize_col_name(col)
+        if "bölge" in norm and "düzey 1" in norm and col not in cols:
+            cols.append(col)
+    return cols
+
+
+def _normalize_ibbs1_value(x):
+    """TR1/TR2 kodlarını ve bölge adı olarak gelen değerleri standart TR koduna çevirir."""
+    if pd.isna(x):
+        return None
+
+    raw = str(x).strip()
+    if raw == "" or raw.lower() in ["nan", "none", "null"]:
+        return None
+
+    upper = raw.upper().replace("İ", "I")
+    upper = upper.replace("Ğ", "G").replace("Ü", "U").replace("Ş", "S").replace("Ö", "O").replace("Ç", "C")
+
+    # Zaten TR koduysa
+    for kod in BOLGE_ADLARI.keys():
+        if upper == kod or upper.startswith(kod + " ") or upper.startswith(kod + "-"):
+            return kod
+
+    # Bölge adı olarak geldiyse
+    name_to_code = {
+        "ISTANBUL": "TR1",
+        "BATI MARMARA": "TR2",
+        "EGE": "TR3",
+        "DOGU MARMARA": "TR4",
+        "BATI ANADOLU": "TR5",
+        "AKDENIZ": "TR6",
+        "ORTA ANADOLU": "TR7",
+        "BATI KARADENIZ": "TR8",
+        "DOGU KARADENIZ": "TR9",
+        "KUZEYDOGU ANADOLU": "TRA",
+        "ORTADOGU ANADOLU": "TRB",
+        "GUNEYDOGU ANADOLU": "TRC",
+    }
+    if upper in name_to_code:
+        return name_to_code[upper]
+
+    # Değer içinde bölge adı geçiyorsa
+    for name, kod in name_to_code.items():
+        if name in upper:
+            return kod
+
+    return None
+
+
+def load_real_data():
+    data_path = next((p for p in DATA_CANDIDATES if os.path.exists(p)), None)
+    if data_path is None:
+        print("UYARI: bütünveriler.csv bulunamadı. dashboard/data klasörüne bütünveriler.csv ekleyin.")
+        return pd.DataFrame()
+
+    df = pd.read_csv(data_path, low_memory=False)
+    df.columns = df.columns.str.strip()
+    df = df.copy()  # parçalanma/performance warning riskini azaltır
+
+    year_col = _find_col(df, "referans yıl")
+    ibbs_cols = _ibbs_columns(df)
+
+    if year_col is None or not ibbs_cols:
+        raise ValueError("CSV içinde 'referans yıl' veya İBBS-1 bölge sütunu bulunamadı.")
+
+    df["yil"] = pd.to_numeric(df[year_col], errors="coerce").astype("Int64")
+
+    # Kritik düzeltme:
+    # Bazı yıllarda İBBS kodu ilk sütunda, bazı yıllarda ikinci sütunda gelebiliyor.
+    # Bu yüzden tüm İBBS-1 sütunlarını birleştirip ilk dolu değeri alıyoruz.
+    ibbs_raw = pd.Series([None] * len(df), index=df.index, dtype="object")
+    for col in ibbs_cols:
+        current = df[col].where(df[col].notna(), None)
+        current = current.astype("object")
+        current = current.where(current.astype(str).str.strip().str.lower().ne("nan"), None)
+        current = current.where(current.astype(str).str.strip().ne(""), None)
+        ibbs_raw = ibbs_raw.where(ibbs_raw.notna(), current)
+
+    df["ibbs1_raw"] = ibbs_raw
+    df["ibbs1"] = df["ibbs1_raw"].apply(_normalize_ibbs1_value)
+
+    # Sadece yıl veya bölge bilgisi gerçekten olmayan satırlar dışarıda bırakılır.
+    df = df[df["yil"].notna() & df["ibbs1"].isin(BOLGE_ADLARI.keys())].copy()
+    return df
+
+
+real_df = load_real_data()
+
+# Göstergelerde kullanılacak sütunlar
+COL_HANE_INTERNET = _find_col(real_df, "hane internet erişim durumu") if not real_df.empty else None
+COL_BILGISAYAR = _find_col(real_df, "hane bilgisayar kullanım durumu", "bilgisayar kullanım sıklığı") if not real_df.empty else None
+COL_AKILLI = _find_col(real_df, "akıllı telefon kullanımı", "cep telefonu kullanımı", "hanede cep telefonu var mı") if not real_df.empty else None
+COL_EDEVLET = _find_col(real_df, "edevlet hakkında bilgi") if not real_df.empty else None
+COL_ETICARET = _find_col(real_df, "eticaret kullanımı") if not real_df.empty else None
+COL_SOSYAL = _find_col(real_df, "sosyal medya kullanımı") if not real_df.empty else None
+COL_INTERNET_SIKLIK = _find_col(real_df, "internet kullanım sıklığı") if not real_df.empty else None
+COL_EPOSTA = _find_col(real_df, "eposta kullanımı") if not real_df.empty else None
+COL_YZ = _find_col(real_df, "yapay zeka kullanımı") if not real_df.empty else None
+
+DIJITAL_BECERI_COLS = [c for c in [
+    _find_col(real_df, "dijital beceri dosya transfer") if not real_df.empty else None,
+    _find_col(real_df, "dijital beceri uygulama kurulum") if not real_df.empty else None,
+    _find_col(real_df, "dijital beceri ayar değiştirme") if not real_df.empty else None,
+    _find_col(real_df, "dijital beceri doküman oluşturma") if not real_df.empty else None,
+    _find_col(real_df, "dijital beceri tablolama yazılımı kullanma") if not real_df.empty else None,
+    _find_col(real_df, "dijital beceri kod yazma") if not real_df.empty else None,
+] if c]
+
+CEVRIMICI_EGITIM_COLS = [c for c in [
+    _find_col(real_df, "online kurs") if not real_df.empty else None,
+    _find_col(real_df, "online eğitim materyal") if not real_df.empty else None,
+    _find_col(real_df, "online eğitim iletişim") if not real_df.empty else None,
+    _find_col(real_df, "internet üzerinden yapılan diğer eğitim faaliyetleri") if not real_df.empty else None,
+] if c]
+
+
+def _compute_turkey_ts():
+    if real_df.empty:
+        return pd.DataFrame({
+            "yil": [2024],
+            "internet_erisim": [np.nan],
+            "bilgisayar": [np.nan],
+            "akilli_telefon": [np.nan],
+            "edevlet": [np.nan],
+            "eticaret": [np.nan],
+            "sosyal_medya": [np.nan],
+            "cevrimici_egitim": [np.nan],
+            "yapay_zeka_farkin": [np.nan],
+        })
+
+    rows = []
+    for yil, g in real_df.dropna(subset=["yil"]).groupby("yil"):
+        bilgisayar_mode = "freq" if COL_BILGISAYAR and "sıklığı" in COL_BILGISAYAR else "evet"
+        rows.append({
+            "yil": int(yil),
+            "internet_erisim": _safe_indicator(g, COL_HANE_INTERNET),
+            "bilgisayar": _safe_indicator(g, COL_BILGISAYAR, bilgisayar_mode),
+            "akilli_telefon": _safe_indicator(g, COL_AKILLI),
+            "edevlet": _safe_indicator(g, COL_EDEVLET),
+            "eticaret": _safe_indicator(g, COL_ETICARET),
+            "sosyal_medya": _safe_indicator(g, COL_SOSYAL),
+            "cevrimici_egitim": satir_bazli_evet_orani(g, CEVRIMICI_EGITIM_COLS),
+            "yapay_zeka_farkin": _safe_indicator(g, COL_YZ),
+        })
+    out = pd.DataFrame(rows).sort_values("yil")
+    # Bazı göstergeler bazı yıllarda yoksa grafik bozulmasın diye 0 ile tamamlanır.
+    metric_cols = [c for c in out.columns if c != "yil"]
+    out[metric_cols] = out[metric_cols].fillna(0).round(1)
+    return out
+
+
+turkey_ts = _compute_turkey_ts()
+YILLAR = sorted(
+    real_df["yil"]
+    .dropna()
+    .astype(int)
+    .unique()
+    .tolist()
+)
+if not YILLAR:
+    YILLAR = [2024]
+
+
+def _assign_kume(df):
+    """Dijitalleşme skoruna göre 4 kümeye ayırır: 0 en yüksek, 3 en düşük."""
+    df = df.sort_values("dijit_skor", ascending=False).reset_index(drop=True)
+    n = len(df)
+    if n == 0:
+        df["kmeans_kume"] = []
+        return df
+    df["kmeans_kume"] = [min(3, int(i * 4 / n)) for i in range(n)]
+    return df
+
+
+def bolge_yil_df(yil):
+    aktif_yil = max(YILLAR) if yil == "all" else int(yil)
+    d = real_df[real_df["yil"] == aktif_yil].copy()
+
+    rows = []
+    for kod in BOLGE_ADLARI:
+        g = d[d["ibbs1"] == kod]
+        if g.empty:
+            internet_erisim = edevlet = eticaret = dijital_beceri = np.nan
+        else:
+            internet_erisim = _safe_indicator(g, COL_HANE_INTERNET)
+            edevlet = _safe_indicator(g, COL_EDEVLET)
+            eticaret = _safe_indicator(g, COL_ETICARET)
+            dijital_beceri = satir_bazli_evet_orani(g, DIJITAL_BECERI_COLS)
+
+        values = [internet_erisim, edevlet, dijital_beceri, eticaret]
+        values = [0 if pd.isna(v) else v for v in values]
+        dijit_skor = values[0] * 0.30 + values[1] * 0.25 + values[2] * 0.30 + values[3] * 0.15
+        lat, lon = BOLGE_KOORD[kod]
+
+        rows.append({
+            "aktif_yil": aktif_yil,
+            "kod": kod,
+            "bolge": BOLGE_ADLARI[kod],
+            "internet_erisim": round(values[0], 1),
+            "edevlet": round(values[1], 1),
+            "dijital_beceri": round(values[2], 1),
+            "eticaret": round(values[3], 1),
+            "dijit_skor": round(dijit_skor, 1),
+            "lat": lat,
+            "lon": lon,
+            "nufus_milyon": np.nan,
+        })
+
+    return _assign_kume(pd.DataFrame(rows))
+
+
+# İlk görünüm için son yılın bölgesel verisi
+bolge_data = bolge_yil_df("all")
+
 # --- Gerçek Türkiye İBBS-1 GeoJSON yükleme ---
 def load_tr_ibbs1_geojson():
     """dashboard/data/tr_ibbs1.geojson dosyasını yükler. Dosya yoksa harita paneli hata yerine açıklama gösterir."""
-    geo_path = os.path.join(os.path.dirname(__file__), "data", "tr_ibbs1.geojson")
+    geo_path = os.path.join(BASE_DIR, "data", "tr_ibbs1.geojson")
     try:
         with open(geo_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -87,32 +377,6 @@ def load_tr_ibbs1_geojson():
         return None
 
 TR_IBBS1_GEOJSON = load_tr_ibbs1_geojson()
-
-def bolge_yil_df(yil):
-    """2024 bölgesel değerlerini seçilen yılın Türkiye geneli değişimine göre ölçekler.
-    Gerçek bölgesel yıllık veri bağlandığında bu fonksiyon doğrudan veri dosyasından beslenebilir."""
-    aktif_yil = max(YILLAR) if yil == "all" else int(yil)
-    row = turkey_ts[turkey_ts["yil"] == aktif_yil].iloc[0]
-    row_2024 = turkey_ts[turkey_ts["yil"] == max(YILLAR)].iloc[0]
-
-    df = bolge_data.copy()
-    for col in ["internet_erisim", "edevlet", "eticaret"]:
-        ratio = row[col] / row_2024[col]
-        df[col] = (df[col] * ratio).clip(0, 100).round(1)
-
-    # Dijital beceri için elde yıllık seri olmadığı için akıllı telefon ve e-devlet ivmesiyle yaklaşıklandırılır.
-    skill_ratio = ((row["akilli_telefon"] / row_2024["akilli_telefon"]) * 0.55 +
-                   (row["edevlet"] / row_2024["edevlet"]) * 0.45)
-    df["dijital_beceri"] = (df["dijital_beceri"] * skill_ratio).clip(0, 100).round(1)
-
-    df["dijit_skor"] = (
-        df["internet_erisim"] * 0.30 +
-        df["edevlet"] * 0.25 +
-        df["dijital_beceri"] * 0.30 +
-        df["eticaret"] * 0.15
-    ).round(1)
-    df["aktif_yil"] = aktif_yil
-    return df
 
 # --- Demografik Veri ---
 yas_gruplari = ["16-24","25-34","35-44","45-54","55-64","65-74","75+"]
@@ -354,7 +618,7 @@ def kpi_card(baslik, deger, alt, trend, renk=C_ACCENT, seri=None):
 
 
 def make_kpi_row(yil):
-    """Seçilen yıla göre KPI kartlarını oluşturur. Tümü seçilirse 2015–2024 genel özetini gösterir."""
+    """Seçilen yıla göre KPI kartlarını oluşturur. Tümü seçilirse CSV’deki genel dönem özetini gösterir."""
     tumu = yil == "all"
     aktif_yil = max(YILLAR) if tumu else int(yil)
     row = turkey_ts[turkey_ts["yil"] == aktif_yil].iloc[0]
@@ -394,7 +658,7 @@ def make_hero_row(yil):
     score_base = np.mean([base[c] for c in score_cols])
     delta = score_now - score_base
     label = "Genel dönem görünümü" if tumu else f"{aktif_yil} yılı görünümü"
-    caption = "2015–2024 dönemi son değerleri üzerinden hesaplandı" if tumu else f"2015 yılına göre {aktif_yil} seviyesi"
+    caption = f"{min(YILLAR)}–{max(YILLAR)} dönemi CSV’den hesaplandı" if tumu else f"{min(YILLAR)} yılına göre {aktif_yil} seviyesi"
 
     def pill(text, color, bg):
         return html.Span(text, style={
@@ -475,11 +739,11 @@ app.layout = html.Div(style={
                         style={"color": C_TEXT, "fontSize": "34px", "fontWeight": "950",
                                "margin": "0", "letterSpacing": "0.2px", "lineHeight": "1.05"}),
                 html.P("Yapay Zekâ Çağında Bölgesel Farklılıklar & Çok Boyutlu Analiz  •  "
-                       "TÜİK Hanehalkı BİT Araştırması 2015–2024  •  "
+                       "TÜİK Hanehalkı BİT Araştırması  •  "
                        "Dilara Şenay | TÜBİTAK 2209-A",
                        style={"color": C_MUTED, "fontSize": "12px", "fontWeight": "650", "margin": "8px 0 12px"}),
                 html.Div([
-                    html.Span("2015–2024 Zaman Serisi", style={"background":"rgba(139,92,246,0.12)", "color":"#7C3AED", "padding":"7px 10px", "borderRadius":"999px", "fontSize":"10px", "fontWeight":"900", "letterSpacing":"0.3px"}),
+                    html.Span("CSV Tabanlı Zaman Serisi", style={"background":"rgba(139,92,246,0.12)", "color":"#7C3AED", "padding":"7px 10px", "borderRadius":"999px", "fontSize":"10px", "fontWeight":"900", "letterSpacing":"0.3px"}),
                     html.Span("TÜİK BİT Araştırması", style={"background":"rgba(0,166,200,0.10)", "color":"#08788F", "padding":"7px 10px", "borderRadius":"999px", "fontSize":"10px", "fontWeight":"900", "letterSpacing":"0.3px"}),
                     html.Span("TÜBİTAK 2209-A", style={"background":"rgba(236,72,153,0.12)", "color":"#DB2777", "padding":"7px 10px", "borderRadius":"999px", "fontSize":"10px", "fontWeight":"900", "letterSpacing":"0.3px"}),
                 ], style={"display":"flex", "gap":"8px", "flexWrap":"wrap"}),
@@ -545,7 +809,7 @@ def genel_bakis():
             # Zaman Serisi
             html.Div([
                 html.P("ZAMAN SERİSİ ANALİZİ", style=TITLE_STYLE),
-                html.P("2015–2024 Temel BİT Göstergeleri Trendi", style=SUBTITLE_STYLE),
+                html.P("CSV’den hesaplanan temel BİT göstergeleri trendi", style=SUBTITLE_STYLE),
                 dcc.Dropdown(
                     id="ts-gostergeler",
                     options=[
@@ -635,12 +899,18 @@ def _buyume_fig(yil="all"):
     colors = [C_ACCENT, C_ACCENT2, C_GREEN, C_ORANGE, C_PINK]
 
     values = []
-    title_suffix = "2015–2024 ortalama yıllık değişim"
+    title_suffix = "Seçili dönem ortalama yıllık değişim"
     if yil == "all":
         for c in cols:
-            vals = turkey_ts[c].values
-            growth = [(vals[i] - vals[i-1]) / vals[i-1] * 100 for i in range(1, len(vals))]
-            values.append(np.mean(growth))
+            vals = pd.to_numeric(turkey_ts[c], errors="coerce").values
+            growth = []
+            for i in range(1, len(vals)):
+                prev_val = vals[i - 1]
+                cur_val = vals[i]
+                if pd.isna(prev_val) or prev_val == 0 or pd.isna(cur_val):
+                    continue
+                growth.append((cur_val - prev_val) / prev_val * 100)
+            values.append(float(np.mean(growth)) if growth else 0)
     else:
         secili_yil = int(yil)
         idx = turkey_ts.index[turkey_ts["yil"] == secili_yil][0]
@@ -650,7 +920,14 @@ def _buyume_fig(yil="all"):
         else:
             prev = turkey_ts.iloc[idx - 1]
             cur = turkey_ts.iloc[idx]
-            values = [((cur[c] - prev[c]) / prev[c] * 100) for c in cols]
+            values = []
+            for c in cols:
+                prev_val = prev[c]
+                cur_val = cur[c]
+                if pd.isna(prev_val) or prev_val == 0 or pd.isna(cur_val):
+                    values.append(0)
+                else:
+                    values.append((cur_val - prev_val) / prev_val * 100)
             title_suffix = f"{secili_yil-1} → {secili_yil} yıllık değişim"
 
     fig = go.Figure(go.Bar(
@@ -717,7 +994,7 @@ def bolgesel_harita():
                 html.P("BÖLGE SIRALAMALARI", style=TITLE_STYLE),
                 html.P("Dijitalleşme skoru bazında", style=SUBTITLE_STYLE),
                 dcc.Graph(
-                    figure=_bolge_bar(),
+                    id="bolge-siralama",
                     style={"height": "300px"},
                     config={"displayModeBar": False},
                 ),
@@ -736,19 +1013,21 @@ def bolgesel_harita():
             html.Div([
                 html.P("BÖLGESEL UÇURUM ANALİZİ", style=TITLE_STYLE),
                 html.P("En yüksek ile en düşük bölge arasındaki fark", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_ucurum_fig(), style={"height": "280px"}),
+                dcc.Graph(id="ucurum-grafik", style={"height": "280px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
             html.Div([
                 html.P("KÜME DAĞILIMI – RADAR GRAFİĞİ", style=TITLE_STYLE),
                 html.P("Küme bazında ortalama gösterge profilleri", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_radar_fig(), style={"height": "280px"}),
+                dcc.Graph(id="radar-grafik", style={"height": "280px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
     ])
 
 
-def _bolge_bar():
-    srtd = bolge_data.sort_values("dijit_skor", ascending=True)
+def _bolge_bar(df=None):
+    if df is None:
+        df = bolge_data
+    srtd = df.sort_values("dijit_skor", ascending=True)
     colors = [KUME_RENK[k] for k in srtd["kmeans_kume"]]
     fig = go.Figure(go.Bar(
         x=srtd["dijit_skor"], y=srtd["bolge"], orientation="h",
@@ -764,11 +1043,13 @@ def _bolge_bar():
     return fig
 
 
-def _ucurum_fig():
+def _ucurum_fig(df=None):
+    if df is None:
+        df = bolge_data
     gostergeler = ["internet_erisim", "edevlet", "dijital_beceri", "eticaret"]
     etiketler = ["İnternet\nErişimi", "E-Devlet", "Dijital\nBeceri", "E-Ticaret"]
-    max_vals = [bolge_data[g].max() for g in gostergeler]
-    min_vals = [bolge_data[g].min() for g in gostergeler]
+    max_vals = [df[g].max() for g in gostergeler]
+    min_vals = [df[g].min() for g in gostergeler]
     fark = [m - n for m, n in zip(max_vals, min_vals)]
 
     fig = go.Figure()
@@ -786,13 +1067,15 @@ def _ucurum_fig():
     return fig
 
 
-def _radar_fig():
+def _radar_fig(df=None):
+    if df is None:
+        df = bolge_data
     kategoriler = ["İnternet\nErişimi", "E-Devlet", "Dijital\nBeceri", "E-Ticaret"]
     kume_renk_list = [KUME_RENK[i] for i in range(4)]
 
     fig = go.Figure()
     for kume_id in range(4):
-        grup = bolge_data[bolge_data["kmeans_kume"] == kume_id]
+        grup = df[df["kmeans_kume"] == kume_id]
         if len(grup) == 0:
             continue
         vals = [grup["internet_erisim"].mean(), grup["edevlet"].mean(),
@@ -1078,7 +1361,7 @@ def karsil_analiz():
                         html.Label("Yıl 1:", style={"color": C_MUTED, "fontSize": "11px"}),
                         dcc.Dropdown(id="karsil-yil1",
                                      options=[{"label": str(y), "value": y} for y in YILLAR],
-                                     value=2019,
+                                     value=min(YILLAR),
                                      style={"backgroundColor": C_CARD, "color": C_TEXT,
                                             "border": f"1px solid {C_BORDER}", "borderRadius": "8px",
                                             "fontSize": "12px"}),
@@ -1087,7 +1370,7 @@ def karsil_analiz():
                         html.Label("Yıl 2:", style={"color": C_MUTED, "fontSize": "11px"}),
                         dcc.Dropdown(id="karsil-yil2",
                                      options=[{"label": str(y), "value": y} for y in YILLAR],
-                                     value=2024,
+                                     value=max(YILLAR),
                                      style={"backgroundColor": C_CARD, "color": C_TEXT,
                                             "border": f"1px solid {C_BORDER}", "borderRadius": "8px",
                                             "fontSize": "12px"}),
@@ -1098,7 +1381,7 @@ def karsil_analiz():
 
             html.Div([
                 html.P("PANDEMİ ÖNCESİ / SONRASI", style=TITLE_STYLE),
-                html.P("2019 → 2021 dijital ivme", style=SUBTITLE_STYLE),
+                html.P("Pandemi öncesi / sonrası dijital ivme", style=SUBTITLE_STYLE),
                 dcc.Graph(figure=_ivme_fig(), style={"height": "430px"}),
             ], style={**CARD_STYLE, "flex": "2"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
@@ -1131,7 +1414,7 @@ def _ivme_fig():
                          marker_color="#C4B5FD",
                          text=[f"{v:.0f}%" for v in vals_19],
                          textposition="inside", textfont=dict(color="white", size=9)))
-    fig.add_trace(go.Bar(name="2021 (Pandemi sonrası)", x=etiketler, y=vals_21,
+    fig.add_trace(go.Bar(name=f"{comp_year} (karşılaştırma)", x=etiketler, y=vals_21,
                          marker_color=C_ACCENT,
                          text=[f"{v:.0f}%" for v in vals_21],
                          textposition="inside", textfont=dict(color="white", size=9)))
@@ -1225,7 +1508,7 @@ def update_ts(secili, yil):
     }
     if yil == "all":
         df_plot = turkey_ts.copy()
-        secili_text = "Genel: 2015–2024"
+        secili_text = f"Genel: {min(YILLAR)}–{max(YILLAR)}"
     else:
         secili_yil = int(yil)
         baslangic = max(min(YILLAR), secili_yil - 5)
@@ -1270,6 +1553,9 @@ def update_pandemi(yil):
 
 @app.callback(
     Output("bolge-harita", "figure"),
+    Output("bolge-siralama", "figure"),
+    Output("ucurum-grafik", "figure"),
+    Output("radar-grafik", "figure"),
     Input("harita-gosterge", "value"),
     Input("global-yil", "value")
 )
@@ -1302,7 +1588,7 @@ def update_harita(gosterge, yil):
             margin=dict(l=0, r=0, t=40, b=0),
             height=520
         )
-        return fig
+        return fig, _bolge_bar(df), _ucurum_fig(df), _radar_fig(df)
 
     # GeoJSON içindeki NUTS_ID kodları ile df["kod"] birebir eşleşmeli: TR1, TR2, ... TRC
     geo_ids = {f.get("properties", {}).get("NUTS_ID") for f in TR_IBBS1_GEOJSON.get("features", [])}
@@ -1323,7 +1609,7 @@ def update_harita(gosterge, yil):
             height=520,
             margin=dict(l=0, r=0, t=40, b=0)
         )
-        return fig
+        return fig, _bolge_bar(df), _ucurum_fig(df), _radar_fig(df)
 
     customdata = np.stack([
         df["bolge"],
@@ -1356,13 +1642,15 @@ def update_harita(gosterge, yil):
         marker_line_color="rgba(255,255,255,0.95)",
         marker_line_width=1.4,
         colorbar=dict(
-            title=etiketler[gosterge],
+            title=dict(
+                text=etiketler[gosterge],
+                font=dict(size=10, color=C_TEXT)
+            ),
             thickness=13,
             len=0.68,
             x=0.98,
             y=0.48,
             tickfont=dict(size=10, color=C_MUTED),
-            titlefont=dict(size=10, color=C_TEXT),
             outlinewidth=0,
         ),
         hovertemplate=(
@@ -1378,13 +1666,31 @@ def update_harita(gosterge, yil):
         ),
     ))
 
-    # Bölge etiketleri. Harita görünmezse etiketler grafiği bozmasın diye choropleth sonrası eklenir.
+    # Bölge etiketleri için harita üzerinde daha okunaklı manuel konumlar
+    label_pos = {
+        "TR1": (29.05, 41.15),
+        "TR2": (27.20, 40.25),
+        "TR3": (27.35, 38.45),
+        "TR4": (30.05, 40.65),
+        "TR5": (32.90, 39.55),
+        "TR6": (35.00, 36.95),
+        "TR7": (34.70, 39.05),
+        "TR8": (31.85, 41.00),
+        "TR9": (39.25, 40.75),
+        "TRA": (42.20, 40.20),
+        "TRB": (40.30, 38.50),
+        "TRC": (39.00, 37.20),
+    }
+    df["label_lon"] = df["kod"].map(lambda k: label_pos.get(k, (np.nan, np.nan))[0])
+    df["label_lat"] = df["kod"].map(lambda k: label_pos.get(k, (np.nan, np.nan))[1])
+
     fig.add_trace(go.Scattergeo(
-        lon=df["lon"],
-        lat=df["lat"],
+        lon=df["label_lon"],
+        lat=df["label_lat"],
         mode="text",
         text=[f"{b}<br><b>{v:.1f}</b>" for b, v in zip(df["bolge"], df["harita_deger"])],
-        textfont=dict(color="#181124", size=9, family="Inter, Arial"),
+        textfont=dict(color="#181124", size=8, family="Inter, Arial"),
+        textposition="middle center",
         hoverinfo="skip",
         showlegend=False,
     ))
@@ -1442,7 +1748,7 @@ def update_harita(gosterge, yil):
             font=dict(color=C_TEXT, family="Inter, Arial")
         ),
     )
-    return fig
+    return fig, _bolge_bar(df), _ucurum_fig(df), _radar_fig(df)
 
 
 @app.callback(Output("karsil-grafik", "figure"),
