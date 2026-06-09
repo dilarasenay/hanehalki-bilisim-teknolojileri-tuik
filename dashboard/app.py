@@ -24,6 +24,11 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
 
+try:
+    import statsmodels.api as sm
+except Exception:
+    sm = None
+
 # ─────────────────────────────────────────────────────────────
 # 1. VERİ  (CSV'den hesaplanan gerçek dashboard göstergeleri)
 # ─────────────────────────────────────────────────────────────
@@ -276,6 +281,7 @@ def _compute_turkey_ts():
             "edevlet": [np.nan],
             "eticaret": [np.nan],
             "sosyal_medya": [np.nan],
+            "dijital_beceri": [np.nan],
             "cevrimici_egitim": [np.nan],
             "yapay_zeka_farkin": [np.nan],
         })
@@ -291,13 +297,14 @@ def _compute_turkey_ts():
             "edevlet": _safe_indicator(g, COL_EDEVLET),
             "eticaret": _safe_indicator(g, COL_ETICARET),
             "sosyal_medya": _safe_indicator(g, COL_SOSYAL),
+            "dijital_beceri": satir_bazli_evet_orani(g, DIJITAL_BECERI_COLS),
             "cevrimici_egitim": satir_bazli_evet_orani(g, CEVRIMICI_EGITIM_COLS),
             "yapay_zeka_farkin": _safe_indicator(g, COL_YZ),
         })
     out = pd.DataFrame(rows).sort_values("yil")
-    # Bazı göstergeler bazı yıllarda yoksa grafik bozulmasın diye 0 ile tamamlanır.
+    # Veri olmayan göstergeyi 0'a çevirmiyoruz; NaN = veri yok anlamında kalır.
     metric_cols = [c for c in out.columns if c != "yil"]
-    out[metric_cols] = out[metric_cols].fillna(0).round(1)
+    out[metric_cols] = out[metric_cols].round(1)
     return out
 
 
@@ -340,8 +347,9 @@ def bolge_yil_df(yil):
             dijital_beceri = satir_bazli_evet_orani(g, DIJITAL_BECERI_COLS)
 
         values = [internet_erisim, edevlet, dijital_beceri, eticaret]
+        clean_values = [v for v in values if not pd.isna(v)]
+        dijit_skor = float(np.mean(clean_values)) if clean_values else np.nan
         values = [0 if pd.isna(v) else v for v in values]
-        dijit_skor = values[0] * 0.30 + values[1] * 0.25 + values[2] * 0.30 + values[3] * 0.15
         lat, lon = BOLGE_KOORD[kod]
 
         rows.append({
@@ -378,58 +386,305 @@ def load_tr_ibbs1_geojson():
 
 TR_IBBS1_GEOJSON = load_tr_ibbs1_geojson()
 
-# --- Demografik Veri ---
-yas_gruplari = ["16-24","25-34","35-44","45-54","55-64","65-74","75+"]
-demo_df = pd.DataFrame({
-    "yas_grubu": yas_gruplari,
-    "internet":  [99.2, 98.4, 94.1, 82.3, 61.2, 38.5, 18.4],
-    "edevlet":   [72.1, 79.4, 73.8, 62.1, 44.3, 25.7,  9.2],
-    "sosyal":    [97.8, 95.3, 84.2, 69.4, 47.8, 26.3, 10.1],
-    "eticaret":  [58.3, 67.2, 58.4, 44.1, 28.3, 12.4,  4.1],
-})
+# --- CSV'den hesaplanan demografik / model değişkenleri ---
+COL_YAS = _find_col(real_df, "yaş", "yas") if not real_df.empty else None
+COL_CINSIYET = _find_col(real_df, "cinsiyet") if not real_df.empty else None
+COL_EGITIM = _find_col(real_df, "eğitim", "okul biten", "okul", "egitim") if not real_df.empty else None
+COL_GELIR_5LI_STD = _find_col(real_df, "gelir_5li_std") if not real_df.empty else None
+COL_GELIR_RAW = _find_col(
+    real_df,
+    "hanenin aylık toplam net geliri (5'li gelir grubu)",
+    "hanenin aylık toplam net geliri",
+    "gelir grubu",
+    "gelir"
+) if not real_df.empty else None
 
-egitim_gruplari = ["Okuryazar\nDeğil","İlkokul","Ortaokul","Lise","Üniversite","Yüksek\nLisans+"]
-egitim_df = pd.DataFrame({
-    "egitim": egitim_gruplari,
-    "internet":  [23.4, 68.2, 87.5, 94.8, 98.9, 99.6],
-    "edevlet":   [ 8.1, 38.4, 58.2, 72.4, 87.3, 91.2],
-    "dijital_b": [ 4.2, 21.3, 42.8, 61.4, 82.1, 91.7],
-})
 
-cinsiyet_df = pd.DataFrame({
-    "kategori": ["İnternet\nKullanımı","Akıllı\nTelefon","E-Devlet","E-Ticaret",
-                 "Sosyal\nMedya","Dijital\nBeceri"],
-    "erkek": [97.8, 97.1, 71.2, 60.4, 88.4, 61.3],
-    "kadin": [96.6, 95.5, 67.3, 54.2, 90.1, 52.7],
-})
+def _filtered_df_by_year(yil="all"):
+    df = real_df.copy()
+    if yil != "all" and "yil" in df.columns:
+        df = df[df["yil"] == int(yil)].copy()
+    return df
 
-# --- NLP Duygu Analizi Simülasyonu ---
-nlp_df = pd.DataFrame({
-    "konu":     ["Dijitalleşme","E-Devlet","Yapay Zeka","Dijital Eğitim","5G/Altyapı","E-Ticaret"],
-    "pozitif":  [42.3, 35.1, 54.7, 48.2, 38.9, 62.4],
-    "notr":     [31.2, 28.4, 25.3, 29.8, 30.1, 22.3],
-    "negatif":  [26.5, 36.5, 20.0, 22.0, 31.0, 15.3],
-})
 
-lda_konular = pd.DataFrame({
-    "konu_no": [1, 2, 3, 4, 5],
-    "konu_adi": [
-        "E-Devlet & Kamu Hizmetleri",
-        "Yapay Zeka & Teknoloji",
-        "Dijital Eğitim",
-        "Altyapı & Erişim Sorunları",
-        "E-Ticaret & Ekonomi",
-    ],
-    "agirlik": [28.4, 24.1, 18.7, 16.3, 12.5],
-    "kelimeler": [
-        "edevlet, vergi, randevu, kimlik, belediye, hizmet",
-        "yapay zeka, chatgpt, otomasyon, robot, teknoloji",
-        "uzaktan, online ders, dijital, öğrenme, pandemi",
-        "internet, hız, fiber, kırsal, erişim, altyapı",
-        "online alışveriş, kargo, sipariş, ödeme, uygulama",
-    ],
-    "renk": ["#0D47A1","#1565C0","#1976D2","#1E88E5","#42A5F5"],
-})
+def standardize_income_5li(series):
+    """Geliri her yıl için 1-5 arası standart gelir grubuna çevirir."""
+    s = pd.to_numeric(series, errors="coerce")
+    valid = s.dropna()
+    if valid.empty:
+        return s
+    max_val = valid.max()
+    if max_val <= 5:
+        return s.clip(1, 5)
+    if max_val <= 20:
+        return np.ceil(s / 4).clip(1, 5)
+    try:
+        return pd.qcut(s, q=5, labels=[1, 2, 3, 4, 5], duplicates="drop").astype(float)
+    except Exception:
+        return pd.Series(np.nan, index=s.index)
+
+
+def education_group(series):
+    """
+    TÜİK birleşik eğitim kodlarını 4 ana gruba indirger.
+
+    Bu projedeki birleşik veride görülen kodlar:
+    1,2,3,4,5,6,7,51,52,53,511,512
+    """
+    s = pd.to_numeric(series, errors="coerce")
+    out = pd.Series(index=s.index, dtype="object")
+
+    # Referans eğitim grubu: İlkokul ve Altı
+    out[s.isin([1, 2])] = "İlkokul ve Altı"
+
+    # Ortaokul / Lise
+    out[s.isin([3, 4, 5])] = "Ortaokul/Lise"
+
+    # Üniversite
+    out[s.isin([6, 51, 511, 512])] = "Üniversite"
+
+    # Üniversite Üstü
+    out[s.isin([7, 52, 53])] = "Üniversite Üstü"
+
+    return out
+
+
+def _income_5li_for_df(df):
+    if COL_GELIR_5LI_STD and COL_GELIR_5LI_STD in df.columns:
+        return pd.to_numeric(df[COL_GELIR_5LI_STD], errors="coerce")
+    if COL_GELIR_RAW and COL_GELIR_RAW in df.columns:
+        return standardize_income_5li(df[COL_GELIR_RAW])
+    return pd.Series(np.nan, index=df.index)
+
+
+def create_demographic_tables(yil="all"):
+    df = _filtered_df_by_year(yil)
+    if df.empty or COL_YAS is None:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    df = df.copy()
+    df["yas_num"] = pd.to_numeric(df[COL_YAS], errors="coerce")
+    df["yas_grubu"] = pd.cut(
+        df["yas_num"],
+        bins=[15, 30, 45, 60, 120],
+        labels=["16-30", "31-45", "46-60", "60+"]
+    )
+
+    yas_rows = []
+    for grup, g in df.groupby("yas_grubu", observed=False):
+        yas_rows.append({
+            "yas_grubu": str(grup),
+            "internet": _safe_indicator(g, COL_HANE_INTERNET),
+            "edevlet": _safe_indicator(g, COL_EDEVLET),
+            "sosyal": _safe_indicator(g, COL_SOSYAL),
+            "eticaret": _safe_indicator(g, COL_ETICARET),
+        })
+    demo_df = pd.DataFrame(yas_rows)
+
+    if COL_EGITIM:
+        df["egitim_grup"] = education_group(df[COL_EGITIM])
+        egitim_order = ["İlkokul ve Altı", "Ortaokul/Lise", "Üniversite", "Üniversite Üstü"]
+        egitim_rows = []
+        for egitim in egitim_order:
+            g = df[df["egitim_grup"] == egitim]
+            egitim_rows.append({
+                "egitim": egitim,
+                "internet": _safe_indicator(g, COL_HANE_INTERNET),
+                "edevlet": _safe_indicator(g, COL_EDEVLET),
+                "dijital_b": satir_bazli_evet_orani(g, DIJITAL_BECERI_COLS),
+            })
+        egitim_df = pd.DataFrame(egitim_rows)
+    else:
+        egitim_df = pd.DataFrame()
+
+    cinsiyet_map = {1: "Erkek", 2: "Kadın"}
+    gender_rows = []
+    if COL_CINSIYET:
+        cnum = pd.to_numeric(df[COL_CINSIYET], errors="coerce")
+        for kod, ad in cinsiyet_map.items():
+            g = df[cnum == kod]
+            gender_rows.append({
+                "cinsiyet": ad,
+                "internet": _safe_indicator(g, COL_HANE_INTERNET),
+                "edevlet": _safe_indicator(g, COL_EDEVLET),
+                "eticaret": _safe_indicator(g, COL_ETICARET),
+                "sosyal": _safe_indicator(g, COL_SOSYAL),
+                "dijital": satir_bazli_evet_orani(g, DIJITAL_BECERI_COLS),
+            })
+    cinsiyet_df = pd.DataFrame(gender_rows)
+    return demo_df, egitim_df, cinsiyet_df
+
+
+def _row_digital_score(df):
+    cols = [COL_HANE_INTERNET, COL_EDEVLET, COL_ETICARET, COL_SOSYAL, COL_AKILLI]
+    score_cols = []
+    for col in cols:
+        if col and col in df.columns:
+            score_cols.append(pd.to_numeric(df[col], errors="coerce").map({1: 1, 2: 0}))
+    if not score_cols:
+        return pd.Series(np.nan, index=df.index)
+    return pd.concat(score_cols, axis=1).mean(axis=1)
+
+
+def calculate_real_ols(yil="all"):
+    """
+    OLS katsayılarını gerçek CSV verisinden hesaplar.
+
+    Model yapısı:
+    - Bağımlı değişken: dijital_skor
+    - Yaş: sürekli değişken
+    - Cinsiyet: Kadın dummy, referans Erkek
+    - Gelir: 5'li gelir grubu dummy, referans Gelir 1
+    - Eğitim: 4 grup dummy, referans İlkokul ve Altı
+    """
+    df = _filtered_df_by_year(yil).copy()
+
+    if df.empty or COL_YAS is None or COL_CINSIYET is None or COL_EGITIM is None:
+        if yil != "all":
+            return calculate_real_ols("all")
+        return pd.Series(dtype=float)
+
+    df["dijital_skor"] = _row_digital_score(df)
+    df["yas_num"] = pd.to_numeric(df[COL_YAS], errors="coerce")
+    df["cinsiyet_kadin"] = (pd.to_numeric(df[COL_CINSIYET], errors="coerce") == 2).astype(float)
+    df["gelir_num"] = _income_5li_for_df(df)
+    df["egitim_grup"] = education_group(df[COL_EGITIM])
+
+    model_cols = ["dijital_skor", "yas_num", "cinsiyet_kadin", "egitim_grup", "gelir_num"]
+    model_df = df[model_cols].copy()
+
+    # Gelir kategorileri istenen OLS grafiği için önemli olduğu için, seçili yılda
+    # gelir verisi yetersizse genel dönem verisine düşüyoruz.
+    gelir_valid = pd.to_numeric(model_df["gelir_num"], errors="coerce").notna().sum()
+    if gelir_valid < 20 and yil != "all":
+        return calculate_real_ols("all")
+
+    required_cols = ["dijital_skor", "yas_num", "cinsiyet_kadin", "egitim_grup", "gelir_num"]
+    model_df = model_df.dropna(subset=required_cols).copy()
+
+    if len(model_df) < 20 and yil != "all":
+        return calculate_real_ols("all")
+    if len(model_df) < 20:
+        return pd.Series(dtype=float)
+
+    # Yaş sürekli değişken olarak kalır. Referans kategori yoktur.
+    # Eğitim referansı: İlkokul ve Altı
+    edu_order = ["İlkokul ve Altı", "Ortaokul/Lise", "Üniversite", "Üniversite Üstü"]
+    model_df["egitim_grup"] = pd.Categorical(
+        model_df["egitim_grup"],
+        categories=edu_order,
+        ordered=True
+    )
+    edu_dummies = pd.get_dummies(
+        model_df["egitim_grup"],
+        prefix="egitim",
+        drop_first=True,
+        dtype=float
+    )
+
+    # Gelir referansı: Gelir 1. Grafikte Gelir 2, 3, 4, 5 görünür.
+    gelir_clean = pd.to_numeric(model_df["gelir_num"], errors="coerce").round().clip(1, 5)
+    model_df["gelir_grup"] = pd.Categorical(
+        gelir_clean,
+        categories=[1, 2, 3, 4, 5],
+        ordered=True
+    )
+    gelir_dummies = pd.get_dummies(
+        model_df["gelir_grup"],
+        prefix="gelir",
+        drop_first=True,
+        dtype=float
+    )
+
+    X = pd.concat(
+        [
+            model_df[["yas_num", "cinsiyet_kadin"]],
+            gelir_dummies,
+            edu_dummies,
+        ],
+        axis=1
+    )
+    y = pd.to_numeric(model_df["dijital_skor"], errors="coerce")
+
+    X = X.apply(pd.to_numeric, errors="coerce")
+
+    # Boş, sabit veya sonsuz değer üreten değişkenleri modelden çıkarıyoruz.
+    X = X.replace([np.inf, -np.inf], np.nan)
+    X = X.loc[:, X.notna().any(axis=0)]
+    X = X.loc[:, X.std(ddof=0, skipna=True).fillna(0) > 0]
+
+    if X.empty:
+        if yil != "all":
+            return calculate_real_ols("all")
+        return pd.Series(dtype=float)
+
+    # Standardize katsayılar için X'i z-skorla.
+    X = (X - X.mean()) / X.std(ddof=0).replace(0, np.nan)
+    valid = X.replace([np.inf, -np.inf], np.nan).notna().all(axis=1) & y.notna()
+    X = X.loc[valid]
+    y = y.loc[valid]
+
+    if len(X) < 20 and yil != "all":
+        return calculate_real_ols("all")
+    if len(X) < 20:
+        return pd.Series(dtype=float)
+
+    try:
+        if sm is not None:
+            X_model = sm.add_constant(X, has_constant="add")
+            model = sm.OLS(y, X_model).fit()
+            params = model.params.drop("const", errors="ignore")
+        else:
+            X_np = np.column_stack([np.ones(len(X)), X.values.astype(float)])
+            beta = np.linalg.lstsq(X_np, y.values.astype(float), rcond=None)[0]
+            params = pd.Series(beta[1:], index=X.columns)
+    except Exception:
+        if yil != "all":
+            return calculate_real_ols("all")
+        return pd.Series(dtype=float)
+
+    rename = {
+        "yas_num": "Yaş",
+        "cinsiyet_kadin": "Kadın",
+        "gelir_2": "Gelir 2",
+        "gelir_3": "Gelir 3",
+        "gelir_4": "Gelir 4",
+        "gelir_5": "Gelir 5",
+        "egitim_Ortaokul/Lise": "Ortaokul/Lise",
+        "egitim_Üniversite": "Üniversite",
+        "egitim_Üniversite Üstü": "Üniversite Üstü",
+    }
+    params.index = [rename.get(i, str(i).replace("egitim_", "")) for i in params.index]
+
+    expected = [
+        "Yaş",
+        "Kadın",
+        "Gelir 2",
+        "Gelir 3",
+        "Gelir 4",
+        "Gelir 5",
+        "Ortaokul/Lise",
+        "Üniversite",
+        "Üniversite Üstü",
+    ]
+
+    # Grafikte istenen değişken sırası sabit kalsın. Seçili yılda bir kategori
+    # modelden düşerse 0 gösterilir; katsayı yorumunda referans gruplar dikkate alınır.
+    return params.reindex(expected).fillna(0)
+
+
+def yz_beceri_tables(yil="all"):
+    df = _filtered_df_by_year(yil)
+    if df.empty:
+        return pd.DataFrame(columns=["yil", "yz", "beceri"])
+    rows = []
+    for yil_degeri, g in df.groupby("yil"):
+        rows.append({
+            "yil": int(yil_degeri),
+            "yz": _safe_indicator(g, COL_YZ),
+            "beceri": satir_bazli_evet_orani(g, DIJITAL_BECERI_COLS),
+        })
+    return pd.DataFrame(rows).sort_values("yil")
 
 # ─────────────────────────────────────────────────────────────
 # 2. DASH UYGULAMASI
@@ -554,6 +809,42 @@ PLOTLY_LAYOUT = dict(
 )
 
 
+
+def fmt_pct(v):
+    """NaN değerleri ekranda %nan yerine okunabilir gösterir."""
+    try:
+        if pd.isna(v):
+            return "Veri yok"
+        return f"%{float(v):.1f}"
+    except Exception:
+        return "Veri yok"
+
+
+def fmt_num(v, digits=1):
+    try:
+        if pd.isna(v):
+            return "Veri yok"
+        return f"{float(v):.{digits}f}"
+    except Exception:
+        return "Veri yok"
+
+
+def fmt_delta(v):
+    try:
+        if pd.isna(v):
+            return "Veri yok"
+        sign = "+" if float(v) >= 0 else ""
+        return f"↑ {sign}{float(v):.1f} puan"
+    except Exception:
+        return "Veri yok"
+
+
+def safe_nanmean(values):
+    vals = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    if vals.empty:
+        return np.nan
+    return float(vals.mean())
+
 def mini_trend_fig(col, renk):
     """KPI kartı içindeki küçük sparkline grafik."""
     fig = go.Figure()
@@ -626,7 +917,7 @@ def make_kpi_row(yil):
     cards = [
         ("İnternet Erişimi", "internet_erisim", C_ACCENT, "Hanehalkı erişimi"),
         ("E-Devlet Kullanımı", "edevlet", C_ACCENT2, "Kamu hizmetleri"),
-        ("Akıllı Telefon Sahipliği", "akilli_telefon", C_GREEN, "Hanehalkı sahipliği"),
+        ("Dijital Beceri", "dijital_beceri", C_GREEN, "Temel dijital yetkinlik"),
         ("E-Ticaret Kullanımı", "eticaret", C_ORANGE, "Son 12 ay kullanımı"),
         ("YZ Farkındalığı", "yapay_zeka_farkin", C_PURPLE, "Kullanım / farkındalık"),
     ]
@@ -634,9 +925,9 @@ def make_kpi_row(yil):
         html.Div(
             kpi_card(
                 baslik=title,
-                deger=f"%{row[col]:.1f}",
+                deger=fmt_pct(row[col]),
                 alt=(f"2015–{max(YILLAR)} genel dönem · {desc}" if tumu else f"{aktif_yil} yılı · {desc}"),
-                trend=f"↑ +{row[col] - base[col]:.1f} puan ({min(YILLAR)} → {aktif_yil})",
+                trend=f"{fmt_delta(row[col] - base[col])} ({min(YILLAR)} → {aktif_yil})",
                 renk=color,
                 seri=col,
             ),
@@ -653,10 +944,10 @@ def make_hero_row(yil):
     row = turkey_ts[turkey_ts["yil"] == aktif_yil].iloc[0]
     base = turkey_ts[turkey_ts["yil"] == min(YILLAR)].iloc[0]
 
-    score_cols = ["internet_erisim", "edevlet", "eticaret", "yapay_zeka_farkin"]
-    score_now = np.mean([row[c] for c in score_cols])
-    score_base = np.mean([base[c] for c in score_cols])
-    delta = score_now - score_base
+    score_cols = ["internet_erisim", "edevlet", "eticaret", "dijital_beceri"]
+    score_now = safe_nanmean([row[c] for c in score_cols])
+    score_base = safe_nanmean([base[c] for c in score_cols])
+    delta = score_now - score_base if not pd.isna(score_now) and not pd.isna(score_base) else np.nan
     label = "Genel dönem görünümü" if tumu else f"{aktif_yil} yılı görünümü"
     caption = f"{min(YILLAR)}–{max(YILLAR)} dönemi CSV’den hesaplandı" if tumu else f"{min(YILLAR)} yılına göre {aktif_yil} seviyesi"
 
@@ -674,7 +965,7 @@ def make_hero_row(yil):
                 "color":"rgba(255,255,255,.92)", "marginBottom":"10px"
             }),
             html.Div([
-                html.Span(f"{score_now:.1f}", style={
+                html.Span(fmt_num(score_now), style={
                     "fontSize":"52px", "fontWeight":"950", "lineHeight":"0.95",
                     "color":"white"
                 }),
@@ -690,13 +981,13 @@ def make_hero_row(yil):
 
         html.Div([
             html.Div("DÖNEM DEĞİŞİMİ", style={"fontSize":"12px", "fontWeight":"950", "letterSpacing":".6px", "color":C_MUTED, "marginBottom":"8px"}),
-            html.Div(f"+{delta:.1f} puan", style={"fontSize":"28px", "fontWeight":"950", "color":C_GREEN}),
+            html.Div(fmt_delta(delta).replace("↑ ", ""), style={"fontSize":"28px", "fontWeight":"950", "color":C_GREEN}),
             html.Div(f"{min(YILLAR)} → {aktif_yil}", style={"fontSize":"12px", "fontWeight":"750", "color":C_MUTED}),
             html.Div(style={
                 "height":"9px", "borderRadius":"999px", "background":"rgba(139,92,246,0.12)",
                 "marginTop":"14px", "overflow":"hidden"
             }, children=[html.Div(style={
-                "width": f"{min(score_now,100):.0f}%", "height":"100%",
+                "width": f"{0 if pd.isna(score_now) else min(score_now,100):.0f}%", "height":"100%",
                 "background":"linear-gradient(90deg,#8B5CF6,#EC4899,#06B6D4)",
                 "borderRadius":"999px"
             })]),
@@ -779,7 +1070,7 @@ app.layout = html.Div(style={
             dcc.Tab(label="Genel Bakış",   value="genel"),
             dcc.Tab(label="Bölgesel Harita", value="harita"),
             dcc.Tab(label="Demografik",     value="demo"),
-            dcc.Tab(label="NLP Analizi",    value="nlp"),
+            dcc.Tab(label="YZ & Dijital Beceri", value="yz"),
             dcc.Tab(label="Karşılaştırma",  value="karsil"),
         ], style={"fontFamily": "inherit"},
         colors={"border": C_BORDER, "primary": C_ACCENT, "background": C_BG}),
@@ -814,7 +1105,7 @@ def genel_bakis():
                     id="ts-gostergeler",
                     options=[
                         {"label": "İnternet Erişimi",    "value": "internet_erisim"},
-                        {"label": "Akıllı Telefon",       "value": "akilli_telefon"},
+                        {"label": "Dijital Beceri",       "value": "dijital_beceri"},
                         {"label": "E-Devlet",             "value": "edevlet"},
                         {"label": "E-Ticaret",            "value": "eticaret"},
                         {"label": "Sosyal Medya",         "value": "sosyal_medya"},
@@ -894,8 +1185,8 @@ def _pandemi_fig(yil="all"):
 
 
 def _buyume_fig(yil="all"):
-    cols = ["internet_erisim", "edevlet", "akilli_telefon", "eticaret", "yapay_zeka_farkin"]
-    labels = ["İnternet", "E-Devlet", "Akıllı Telefon", "E-Ticaret", "YZ Farkındalığı"]
+    cols = ["internet_erisim", "edevlet", "dijital_beceri", "eticaret", "yapay_zeka_farkin"]
+    labels = ["İnternet", "E-Devlet", "Dijital Beceri", "E-Ticaret", "YZ Farkındalığı"]
     colors = [C_ACCENT, C_ACCENT2, C_GREEN, C_ORANGE, C_PINK]
 
     values = []
@@ -983,8 +1274,8 @@ def bolgesel_harita():
                                 "color": C_TEXT, "fontSize": "12px", "cursor": "pointer"},
                 ),
                 html.Hr(style={"borderColor": C_BORDER, "margin": "16px 0"}),
-                html.P("K-MEANS KÜMELEMESİ", style=TITLE_STYLE),
-                html.P("Algoritmik grup ataması (k=4)", style=SUBTITLE_STYLE),
+                html.P("SKORA GÖRE BÖLGE GRUPLARI", style=TITLE_STYLE),
+                html.P("Dijitalleşme skoruna göre 4 seviyeli bölge sınıflaması", style=SUBTITLE_STYLE),
                 *[html.Div([
                     html.Span("■", style={"color": KUME_RENK[i], "fontSize": "18px"}),
                     html.Span(f" {KUME_ETIKET[i]}", style={"color": C_TEXT, "fontSize": "11px"}),
@@ -1107,247 +1398,249 @@ def _radar_fig(df=None):
 
 
 # ── Demografik ───────────────────────────────────────────────
-def demografik():
+def demografik(yil="all"):
     return html.Div([
         html.Div([
-            # Yaş Grubu
             html.Div([
                 html.P("YAŞ GRUBUNA GÖRE DİJİTAL KULLANIM", style=TITLE_STYLE),
-                html.P("İnternet, E-Devlet, Sosyal Medya, E-Ticaret oranları (%)", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_yas_fig(), style={"height": "340px"}),
+                html.P("Seçilen yıl için TÜİK CSV verisinden hesaplanan oranlar (%)", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_yas_fig(yil), style={"height": "340px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
-            # Eğitim
             html.Div([
                 html.P("EĞİTİM DÜZEYİ İLE DİJİTALLEŞME İLİŞKİSİ", style=TITLE_STYLE),
-                html.P("Eğitim seviyesi arttıkça dijital katılım doğrusal artış gösteriyor", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_egitim_fig(), style={"height": "340px"}),
+                html.P("Eğitim 4 gruba indirgendi: ilkokul ve altı, ortaokul/lise, üniversite, üniversite üstü", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_egitim_fig(yil), style={"height": "340px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
         html.Div([
-            # Cinsiyet
             html.Div([
                 html.P("CİNSİYET FARKLILIKLARI", style=TITLE_STYLE),
                 html.P("Dijital göstergeler bazında erkek-kadın karşılaştırması", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_cinsiyet_fig(), style={"height": "280px"}),
+                dcc.Graph(figure=_cinsiyet_fig(yil), style={"height": "280px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
-            # Dijital Uçurum Kök Nedenleri
             html.Div([
-                html.P("DİJİTAL UÇURUMUN SOSYAL BOYUTLARI", style=TITLE_STYLE),
-                html.P("OLS Regresyon – Dijitalleşmeye etkisi en yüksek değişkenler", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_ols_fig(), style={"height": "280px"}),
+                html.P("DİJİTALLEŞMEYİ AÇIKLAYAN DEĞİŞKENLER", style=TITLE_STYLE),
+                html.P("OLS regresyon · referanslar: gelir 1, erkek, ilkokul ve altı · yaş sürekli değişken", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_ols_fig(yil), style={"height": "280px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
     ])
 
 
-def _yas_fig():
+def _empty_fig(message):
     fig = go.Figure()
-    traces = [
-        ("internet",  "İnternet",      C_ACCENT),
-        ("edevlet",   "E-Devlet",      C_ACCENT2),
-        ("sosyal",    "Sosyal Medya",   C_GREEN),
-        ("eticaret",  "E-Ticaret",      C_ORANGE),
-    ]
-    for col, label, color in traces:
-        fig.add_trace(go.Scatter(
-            x=demo_df["yas_grubu"], y=demo_df[col],
-            name=label, line=dict(color=color, width=2),
-            mode="lines+markers", marker=dict(size=7),
-            fill="tozeroy" if col == "internet" else None,
-            fillcolor="rgba(59,130,246,0.05)" if col == "internet" else None,
-        ))
+    fig.add_annotation(
+        text=message,
+        x=0.5,
+        y=0.5,
+        showarrow=False,
+        font=dict(size=14, color=C_MUTED),
+    )
+    layout = {**PLOTLY_LAYOUT}
+    layout["xaxis"] = dict(visible=False)
+    layout["yaxis"] = dict(visible=False)
+    fig.update_layout(**layout)
+    return fig
+
+
+def _yas_fig(yil="all"):
+    demo_df, _, _ = create_demographic_tables(yil)
+    if demo_df.empty:
+        return _empty_fig("Yaş grafiği için yeterli veri bulunamadı.")
+    fig = go.Figure()
+    for col, label, color in [
+        ("internet", "İnternet", C_ACCENT),
+        ("edevlet", "E-Devlet", C_ACCENT2),
+        ("sosyal", "Sosyal Medya", C_GREEN),
+        ("eticaret", "E-Ticaret", C_ORANGE),
+    ]:
+        if col in demo_df.columns:
+            fig.add_trace(go.Scatter(
+                x=demo_df["yas_grubu"], y=demo_df[col],
+                name=label, line=dict(color=color, width=2.7),
+                mode="lines+markers", marker=dict(size=7),
+            ))
     fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="Kullanım Oranı (%)", yaxis_range=[0, 105])
     return fig
 
 
-def _egitim_fig():
+def _egitim_fig(yil="all"):
+    _, egitim_df, _ = create_demographic_tables(yil)
+    if egitim_df.empty:
+        return _empty_fig("Eğitim grafiği için yeterli veri bulunamadı.")
     fig = go.Figure()
     for col, label, color in [
-        ("internet",  "İnternet Erişimi", C_ACCENT),
-        ("edevlet",   "E-Devlet",          C_ACCENT2),
-        ("dijital_b", "Dijital Beceri",    C_GREEN),
+        ("internet", "İnternet", C_ACCENT),
+        ("edevlet", "E-Devlet", C_ACCENT2),
+        ("dijital_b", "Dijital Beceri", C_GREEN),
     ]:
+        if col in egitim_df.columns:
+            fig.add_trace(go.Bar(
+                name=label, x=egitim_df["egitim"], y=egitim_df[col],
+                marker_color=color,
+                text=["" if pd.isna(v) else f"{v:.0f}%" for v in egitim_df[col]],
+                textposition="outside", textfont=dict(size=8, color=C_TEXT),
+            ))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="group", yaxis_title="Oran (%)", yaxis_range=[0, 110])
+    return fig
+
+
+def _cinsiyet_fig(yil="all"):
+    try:
+        _, _, cinsiyet_df = create_demographic_tables(yil)
+        if cinsiyet_df.empty or "cinsiyet" not in cinsiyet_df.columns:
+            return _empty_fig("Cinsiyet grafiği için yeterli veri bulunamadı.")
+
+        erkek_df = cinsiyet_df[cinsiyet_df["cinsiyet"] == "Erkek"]
+        kadin_df = cinsiyet_df[cinsiyet_df["cinsiyet"] == "Kadın"]
+        if erkek_df.empty or kadin_df.empty:
+            return _empty_fig("Erkek/Kadın kırılımı bu yıl için bulunamadı.")
+
+        kategoriler = ["internet", "edevlet", "eticaret", "sosyal", "dijital"]
+        etiketler = ["İnternet", "E-Devlet", "E-Ticaret", "Sosyal Medya", "Dijital Beceri"]
+        erkek = erkek_df.iloc[0]
+        kadin = kadin_df.iloc[0]
+
+        erkek_vals = [erkek.get(k, np.nan) for k in kategoriler]
+        kadin_vals = [kadin.get(k, np.nan) for k in kategoriler]
+
+        fig = go.Figure()
         fig.add_trace(go.Bar(
-            name=label, x=egitim_df["egitim"], y=egitim_df[col],
-            marker_color=color,
-            text=[f"{v:.0f}%" for v in egitim_df[col]],
-            textposition="outside", textfont=dict(size=8, color=C_TEXT),
+            name="Erkek", x=etiketler, y=erkek_vals, marker_color=C_ACCENT,
+            text=["" if pd.isna(v) else f"{v:.1f}" for v in erkek_vals],
+            textposition="outside", textfont=dict(size=9, color=C_TEXT)
         ))
-    fig.update_layout(**PLOTLY_LAYOUT, barmode="group",
-                      yaxis_title="Oran (%)", yaxis_range=[0, 110])
-    return fig
+        fig.add_trace(go.Bar(
+            name="Kadın", x=etiketler, y=kadin_vals, marker_color=C_PINK,
+            text=["" if pd.isna(v) else f"{v:.1f}" for v in kadin_vals],
+            textposition="outside", textfont=dict(size=9, color=C_TEXT)
+        ))
+        fig.update_layout(**PLOTLY_LAYOUT, barmode="group", yaxis_range=[0, 108], yaxis_title="%")
+        return fig
+    except Exception as e:
+        return _empty_fig(f"Cinsiyet grafiği oluşturulamadı: {e}")
 
 
-def _cinsiyet_fig():
-    fig = go.Figure()
-    fig.add_trace(go.Bar(name="Erkek", x=cinsiyet_df["kategori"], y=cinsiyet_df["erkek"],
-                         marker_color=C_ACCENT,
-                         text=[f"{v}" for v in cinsiyet_df["erkek"]],
-                         textposition="outside", textfont=dict(size=9, color=C_TEXT)))
-    fig.add_trace(go.Bar(name="Kadın", x=cinsiyet_df["kategori"], y=cinsiyet_df["kadin"],
-                         marker_color="#EC4899",
-                         text=[f"{v}" for v in cinsiyet_df["kadin"]],
-                         textposition="outside", textfont=dict(size=9, color=C_TEXT)))
-
-    # Fark çizgisi
-    fark = cinsiyet_df["erkek"] - cinsiyet_df["kadin"]
-    for i, (kat, f) in enumerate(zip(cinsiyet_df["kategori"], fark)):
-        fig.add_annotation(
-            x=kat, y=max(cinsiyet_df["erkek"].iloc[i], cinsiyet_df["kadin"].iloc[i]) + 4,
-            text=f"Δ{f:.1f}", showarrow=False,
-            font=dict(color=C_ORANGE, size=9),
-        )
-    fig.update_layout(**PLOTLY_LAYOUT, barmode="group", yaxis_range=[0, 108], yaxis_title="%")
-    return fig
-
-
-def _ols_fig():
-    degiskenler = ["Eğitim Düzeyi", "Gelir Seviyesi", "Kentsel Yaşam",
-                   "Genç Yaş (16-34)", "Hanehalkı Büyüklüğü", "Bölge Etkisi"]
-    katsayilar = [0.48, 0.36, 0.29, 0.24, -0.17, 0.21]
+def _ols_fig(yil="all"):
+    katsayilar = calculate_real_ols(yil)
+    katsayilar = pd.to_numeric(katsayilar, errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+    if katsayilar.empty:
+        return _empty_fig("OLS için yeterli veri bulunamadı veya statsmodels kurulu değil.")
     renkler = [C_GREEN if k > 0 else C_RED for k in katsayilar]
-
     fig = go.Figure(go.Bar(
-        x=katsayilar, y=degiskenler, orientation="h",
+        x=katsayilar.values, y=katsayilar.index, orientation="h",
         marker_color=renkler,
-        text=[f"β={v:.2f}" for v in katsayilar],
-        textposition="outside",
-        textfont=dict(color=C_TEXT, size=10),
+        text=[f"β={v:.3f}" for v in katsayilar.values],
+        textposition="outside", textfont=dict(color=C_TEXT, size=10),
     ))
     fig.add_vline(x=0, line_color=C_BORDER, line_width=1)
     ol = {**PLOTLY_LAYOUT}
-    ol["xaxis"] = dict(title="Standardize OLS Katsayısı (β)", gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10))
+    ol["xaxis"] = dict(title="Standardize OLS Katsayısı", gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10))
     ol["yaxis"] = dict(tickfont=dict(color=C_TEXT, size=10), gridcolor=C_BORDER)
     fig.update_layout(**ol)
     return fig
 
-
-# ── NLP Analizi ──────────────────────────────────────────────
-def nlp_analizi():
+# ── Yapay Zekâ & Dijital Beceri ─────────────────────────────
+def yz_beceri_analizi(yil="all"):
     return html.Div([
         html.Div([
             html.Div([
-                html.P("DUYGU ANALİZİ SONUÇLARI", style=TITLE_STYLE),
-                html.P("X/Twitter verileri – NLP tabanlı sentiment analizi (n≈8,000 gönderi)", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_duygu_fig(), style={"height": "320px"}),
-            ], style={**CARD_STYLE, "flex": "2"}),
+                html.P("YAPAY ZEKÂ KULLANIMI", style=TITLE_STYLE),
+                html.P("TÜİK CSV verisinden hesaplanan yapay zekâ kullanımı / farkındalığı", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_yz_trend_fig(yil), style={"height": "340px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
             html.Div([
-                html.P("LDA KONU MODELLEMESİ", style=TITLE_STYLE),
-                html.P("Latent Dirichlet Allocation – 5 Tema", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_lda_fig(), style={"height": "320px"}),
+                html.P("DİJİTAL BECERİ PROFİLİ", style=TITLE_STYLE),
+                html.P("Dosya transferi, uygulama kurulumu, ayar değiştirme, doküman, tablolama ve kod yazma becerileri", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_beceri_fig(yil), style={"height": "340px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
         html.Div([
             html.Div([
-                html.P("KONU BAZINDA DUYGU DAĞILIMI", style=TITLE_STYLE),
-                html.P("Her konuya ait pozitif / nötr / negatif oran (100% stacked)", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_stacked_duygu_fig(), style={"height": "280px"}),
-            ], style={**CARD_STYLE, "flex": "2"}),
+                html.P("YAŞ GRUBUNA GÖRE YAPAY ZEKÂ", style=TITLE_STYLE),
+                html.P("Seçili yıl / dönem içinde yaş kırılımı", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_yz_by_age_fig(yil), style={"height": "300px"}),
+            ], style={**CARD_STYLE, "flex": "1"}),
             html.Div([
-                html.P("ANAHTAR KELİME FREKANSI", style=TITLE_STYLE),
-                html.P("En çok geçen dijitalleşme terimleri", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=_kelime_fig(), style={"height": "280px"}),
+                html.P("GELİR GRUBUNA GÖRE DİJİTALLEŞME", style=TITLE_STYLE),
+                html.P("Gelir tüm yıllarda 5'li gruba standardize edildi", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=_gelir_dijital_fig(yil), style={"height": "300px"}),
             ], style={**CARD_STYLE, "flex": "1"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
-        # Tema kartları
-        html.Div([
-            html.P("ÇIKARILAN TEMALAR & ÖRNEK KELİMELER", style=TITLE_STYLE),
-            html.P("LDA Konu Modellemesi – Tema Özeti", style=SUBTITLE_STYLE),
-            html.Div([
-                html.Div([
-                    html.Div([
-                        html.Span(f"#{row['konu_no']}", style={
-                            "backgroundColor": row["renk"],
-                            "color": "white", "fontSize": "11px", "fontWeight": "700",
-                            "padding": "2px 8px", "borderRadius": "4px", "marginRight": "8px",
-                        }),
-                        html.Span(row["konu_adi"], style={"color": C_TEXT, "fontWeight": "600", "fontSize": "12px"}),
-                        html.Span(f"  %{row['agirlik']}", style={"color": C_MUTED, "fontSize": "11px"}),
-                    ]),
-                    html.P(row["kelimeler"], style={"color": C_MUTED, "fontSize": "10px", "marginTop": "4px", "marginBottom": "0"}),
-                ], style={
-                    "backgroundColor": C_BG, "border": f"1px solid {row['renk']}22",
-                    "borderLeft": f"3px solid {row['renk']}", "borderRadius": "8px",
-                    "padding": "10px 14px", "flex": "1", "minWidth": "200px",
-                }) for _, row in lda_konular.iterrows()
-            ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
-        ], style=CARD_STYLE),
     ])
 
 
-def _duygu_fig():
+def _yz_trend_fig(yil="all"):
+    yz_df = yz_beceri_tables("all" if yil == "all" else yil)
+    if yz_df.empty:
+        return _empty_fig("Yapay zekâ göstergesi için veri bulunamadı.")
     fig = go.Figure()
-    fig.add_trace(go.Bar(name="Pozitif", x=nlp_df["konu"], y=nlp_df["pozitif"],
-                         marker_color=C_GREEN,
-                         text=[f"{v:.0f}%" for v in nlp_df["pozitif"]],
-                         textposition="inside", textfont=dict(color="white", size=9)))
-    fig.add_trace(go.Bar(name="Nötr", x=nlp_df["konu"], y=nlp_df["notr"],
-                         marker_color="#475569",
-                         text=[f"{v:.0f}%" for v in nlp_df["notr"]],
-                         textposition="inside", textfont=dict(color="white", size=9)))
-    fig.add_trace(go.Bar(name="Negatif", x=nlp_df["konu"], y=nlp_df["negatif"],
-                         marker_color=C_RED,
-                         text=[f"{v:.0f}%" for v in nlp_df["negatif"]],
-                         textposition="inside", textfont=dict(color="white", size=9)))
-    fig.update_layout(**PLOTLY_LAYOUT, barmode="stack", yaxis_title="Gönderi Oranı (%)")
-    return fig
-
-
-def _lda_fig():
-    fig = go.Figure(go.Pie(
-        labels=lda_konular["konu_adi"],
-        values=lda_konular["agirlik"],
-        marker_colors=lda_konular["renk"].tolist(),
-        textinfo="label+percent",
-        textfont=dict(size=9, color="white"),
-        hole=0.4,
+    fig.add_trace(go.Scatter(
+        x=yz_df["yil"], y=yz_df["yz"], mode="lines+markers",
+        name="Yapay Zekâ", line=dict(color=C_PURPLE, width=3.5), marker=dict(size=8),
     ))
-    fig.update_layout(paper_bgcolor="rgba(0,0,0,0)",
-                      font=dict(family="Inter, sans-serif", color=C_TEXT),
-                      margin=dict(l=0, r=0, t=10, b=10),
-                      showlegend=False)
+    fig.add_trace(go.Scatter(
+        x=yz_df["yil"], y=yz_df["beceri"], mode="lines+markers",
+        name="Dijital Beceri", line=dict(color=C_GREEN, width=2.8), marker=dict(size=7),
+    ))
+    if yil != "all":
+        fig.add_vline(x=int(yil), line_width=2, line_dash="dash", line_color=C_PINK)
+    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="%", yaxis_range=[0, 105], hovermode="x unified")
     return fig
 
 
-def _stacked_duygu_fig():
-    total = nlp_df["pozitif"] + nlp_df["notr"] + nlp_df["negatif"]
-    fig = go.Figure()
-    for col, label, color in [
-        ("pozitif", "Pozitif", C_GREEN),
-        ("notr", "Nötr", "#475569"),
-        ("negatif", "Negatif", C_RED),
-    ]:
-        pct = (nlp_df[col] / total * 100).round(1)
-        fig.add_trace(go.Bar(
-            name=label, x=nlp_df["konu"], y=pct,
-            marker_color=color,
-            text=[f"{v:.0f}%" for v in pct],
-            textposition="inside", textfont=dict(color="white", size=9),
-        ))
-    fig.update_layout(**PLOTLY_LAYOUT, barmode="stack", yaxis_title="%", yaxis_range=[0, 101])
-    return fig
-
-
-def _kelime_fig():
-    kelimeler = ["edevlet","yapay zeka","internet","dijital","hizmet",
-                 "online","teknoloji","alışveriş","chatgpt","altyapı"]
-    frekans = [4821, 3902, 3541, 3280, 2940, 2712, 2485, 2231, 2018, 1895]
-    colors = [C_ACCENT if i < 3 else (C_ACCENT2 if i < 6 else C_MUTED) for i in range(len(kelimeler))]
-
+def _beceri_fig(yil="all"):
+    df = _filtered_df_by_year(yil)
+    rows = []
+    for col in DIJITAL_BECERI_COLS:
+        label = col.replace("dijital beceri", "").strip().title()
+        rows.append({"beceri": label, "oran": _safe_indicator(df, col)})
+    beceri_df = pd.DataFrame(rows).dropna(subset=["oran"])
+    if beceri_df.empty:
+        return _empty_fig("Dijital beceri sütunları için yeterli veri bulunamadı.")
     fig = go.Figure(go.Bar(
-        x=frekans, y=kelimeler, orientation="h",
-        marker_color=colors,
-        text=[f"{v:,}" for v in frekans],
-        textposition="outside", textfont=dict(color=C_TEXT, size=9),
+        x=beceri_df["oran"], y=beceri_df["beceri"], orientation="h",
+        marker_color=C_ACCENT2,
+        text=[f"{v:.1f}%" for v in beceri_df["oran"]], textposition="outside",
+        textfont=dict(color=C_TEXT, size=10),
     ))
-    kl = {**PLOTLY_LAYOUT, "xaxis": dict(title="Gönderi Sayısı", gridcolor=C_BORDER, tickfont=dict(color=C_MUTED, size=10)), "yaxis": dict(tickfont=dict(color=C_TEXT, size=10), gridcolor=C_BORDER)}
-    kl["margin"] = dict(l=80, r=60, t=10, b=10)
-    fig.update_layout(**kl)
+    fig.update_layout(**PLOTLY_LAYOUT, xaxis_title="Oran (%)", yaxis_title="")
     return fig
 
+
+def _yz_by_age_fig(yil="all"):
+    df = _filtered_df_by_year(yil).copy()
+    if df.empty or COL_YAS is None or COL_YZ is None:
+        return _empty_fig("Yaşa göre yapay zekâ için yeterli veri bulunamadı.")
+    df["yas_num"] = pd.to_numeric(df[COL_YAS], errors="coerce")
+    df["yas_grubu"] = pd.cut(df["yas_num"], bins=[15, 30, 45, 60, 120], labels=["16-30", "31-45", "46-60", "60+"])
+    rows = []
+    for grup, g in df.groupby("yas_grubu", observed=False):
+        rows.append({"yas_grubu": str(grup), "yz": _safe_indicator(g, COL_YZ)})
+    out = pd.DataFrame(rows)
+    fig = go.Figure(go.Bar(x=out["yas_grubu"], y=out["yz"], marker_color=C_PURPLE,
+                           text=["" if pd.isna(v) else f"{v:.1f}%" for v in out["yz"]], textposition="outside"))
+    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="%", yaxis_range=[0, 105])
+    return fig
+
+
+def _gelir_dijital_fig(yil="all"):
+    df = _filtered_df_by_year(yil).copy()
+    if df.empty:
+        return _empty_fig("Gelir analizi için yeterli veri bulunamadı.")
+    df["gelir_5li"] = _income_5li_for_df(df)
+    df["dijital_skor"] = _row_digital_score(df) * 100
+    labels = {1: "1-En Düşük", 2: "2-Düşük", 3: "3-Orta", 4: "4-Orta Üstü", 5: "5-Yüksek"}
+    rows = []
+    for gval, g in df.dropna(subset=["gelir_5li"]).groupby("gelir_5li"):
+        rows.append({"gelir": labels.get(int(gval), str(gval)), "skor": g["dijital_skor"].mean()})
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return _empty_fig("Standart 5'li gelir değişkeni bulunamadı.")
+    fig = go.Figure(go.Bar(x=out["gelir"], y=out["skor"], marker_color=C_ORANGE,
+                           text=[f"{v:.1f}" for v in out["skor"]], textposition="outside"))
+    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="Dijital Skor (%)", yaxis_range=[0, 105])
+    return fig
 
 # ── Karşılaştırma ────────────────────────────────────────────
 def karsil_analiz():
@@ -1387,8 +1680,8 @@ def karsil_analiz():
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
 
         html.Div([
-            html.P("12. KALKINMA PLANI HEDEFLERİ İLE UYUM", style=TITLE_STYLE),
-            html.P("2024 Gerçekleşme vs 2028 Hedefleri (%)", style=SUBTITLE_STYLE),
+            html.P("BAŞLANGIÇ – SON YIL DEĞİŞİMİ", style=TITLE_STYLE),
+            html.P("CSV’den hesaplanan ilk yıl ve son yıl karşılaştırması", style=SUBTITLE_STYLE),
             dcc.Graph(figure=_hedef_fig(), style={"height": "300px"}),
         ], style=CARD_STYLE),
     ])
@@ -1396,35 +1689,49 @@ def karsil_analiz():
 
 def _ivme_fig():
     cols_labels = [
-        ("edevlet",          "E-Devlet"),
+        ("edevlet", "E-Devlet"),
         ("cevrimici_egitim", "Çevrimiçi Eğitim"),
-        ("eticaret",         "E-Ticaret"),
-        ("sosyal_medya",     "Sosyal Medya"),
-        ("yapay_zeka_farkin","YZ Farkındalığı"),
+        ("eticaret", "E-Ticaret"),
+        ("sosyal_medya", "Sosyal Medya"),
+        ("yapay_zeka_farkin", "YZ Farkındalığı"),
     ]
-    v2019 = turkey_ts[turkey_ts["yil"] == 2019].iloc[0]
-    v2021 = turkey_ts[turkey_ts["yil"] == 2021].iloc[0]
+    if turkey_ts.empty or len(turkey_ts) < 2:
+        return _empty_fig("Pandemi öncesi/sonrası karşılaştırması için yeterli yıl yok.")
 
-    etiketler = [l for _, l in cols_labels]
-    vals_19   = [v2019[c] for c, _ in cols_labels]
-    vals_21   = [v2021[c] for c, _ in cols_labels]
+    # 2019 ve 2021 yoksa en yakın uygun yılları kullanır.
+    years = sorted(turkey_ts["yil"].dropna().astype(int).unique().tolist())
+    y_before = 2019 if 2019 in years else years[0]
+    y_after = 2021 if 2021 in years else years[-1]
+    if y_before == y_after and len(years) >= 2:
+        y_before, y_after = years[0], years[-1]
+
+    v_before = turkey_ts[turkey_ts["yil"] == y_before].iloc[0]
+    v_after = turkey_ts[turkey_ts["yil"] == y_after].iloc[0]
+
+    available = [(c, l) for c, l in cols_labels if c in turkey_ts.columns]
+    etiketler = [l for _, l in available]
+    vals_before = [v_before[c] for c, _ in available]
+    vals_after = [v_after[c] for c, _ in available]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(name="2019 (Pandemi öncesi)", x=etiketler, y=vals_19,
-                         marker_color="#C4B5FD",
-                         text=[f"{v:.0f}%" for v in vals_19],
-                         textposition="inside", textfont=dict(color="white", size=9)))
-    fig.add_trace(go.Bar(name=f"{comp_year} (karşılaştırma)", x=etiketler, y=vals_21,
-                         marker_color=C_ACCENT,
-                         text=[f"{v:.0f}%" for v in vals_21],
-                         textposition="inside", textfont=dict(color="white", size=9)))
+    fig.add_trace(go.Bar(
+        name=f"{y_before} (öncesi)", x=etiketler, y=vals_before, marker_color="#C4B5FD",
+        text=["" if pd.isna(v) else f"{v:.0f}%" for v in vals_before],
+        textposition="inside", textfont=dict(color="white", size=9)
+    ))
+    fig.add_trace(go.Bar(
+        name=f"{y_after} (sonrası)", x=etiketler, y=vals_after, marker_color=C_ACCENT,
+        text=["" if pd.isna(v) else f"{v:.0f}%" for v in vals_after],
+        textposition="inside", textfont=dict(color="white", size=9)
+    ))
 
-    for i, (v1, v2, lbl) in enumerate(zip(vals_19, vals_21, etiketler)):
+    for v1, v2, lbl in zip(vals_before, vals_after, etiketler):
+        if pd.isna(v1) or pd.isna(v2):
+            continue
         delta = v2 - v1
         fig.add_annotation(
-            x=lbl, y=max(v1, v2) + 3,
-            text=f"+{delta:.1f}pp", showarrow=False,
-            font=dict(color=C_GREEN if delta > 0 else C_RED, size=10, family="Inter"),
+            x=lbl, y=max(v1, v2) + 3, text=f"{delta:+.1f}pp", showarrow=False,
+            font=dict(color=C_GREEN if delta > 0 else C_RED, size=10, family="Inter")
         )
 
     iv = {**PLOTLY_LAYOUT}
@@ -1435,32 +1742,34 @@ def _ivme_fig():
 
 
 def _hedef_fig():
-    hedefler = pd.DataFrame({
-        "gosterge": ["İnternet\nErişimi", "E-Devlet", "Dijital\nBeceri",
-                     "Fiber\nBağlantı", "YZ\nBenimseme", "E-Ticaret"],
-        "gerceklesme_2024": [97.2, 69.2, 54.1, 38.4, 58.3, 57.4],
-        "hedef_2028":       [99.0, 85.0, 75.0, 65.0, 75.0, 72.0],
-    })
-    hedefler["tamamlanma"] = (hedefler["gerceklesme_2024"] / hedefler["hedef_2028"] * 100).round(1)
-
+    if turkey_ts.empty or len(turkey_ts) < 2:
+        return _empty_fig("Karşılaştırma için yeterli yıl yok.")
+    first = turkey_ts.iloc[0]
+    last = turkey_ts.iloc[-1]
+    cols = ["internet_erisim", "edevlet", "dijital_beceri", "eticaret", "sosyal_medya", "yapay_zeka_farkin"]
+    # turkey_ts içinde dijital_beceri yoksa bölgesel son yıldan yaklaşık genel değer hesaplanır.
+    if "dijital_beceri" not in turkey_ts.columns:
+        cols = [c for c in cols if c != "dijital_beceri"]
+    labels = {
+        "internet_erisim": "İnternet\nErişimi",
+        "edevlet": "E-Devlet",
+        "dijital_beceri": "Dijital\nBeceri",
+        "eticaret": "E-Ticaret",
+        "sosyal_medya": "Sosyal\nMedya",
+        "yapay_zeka_farkin": "YZ\nFarkındalığı",
+    }
+    available = [c for c in cols if c in turkey_ts.columns]
+    gosterge = [labels.get(c, c) for c in available]
+    v_first = [first[c] for c in available]
+    v_last = [last[c] for c in available]
     fig = go.Figure()
-    fig.add_trace(go.Bar(name="2024 Gerçekleşme", x=hedefler["gosterge"],
-                         y=hedefler["gerceklesme_2024"],
-                         marker_color=C_ACCENT,
-                         text=[f"{v:.1f}%" for v in hedefler["gerceklesme_2024"]],
+    fig.add_trace(go.Bar(name=str(int(first["yil"])), x=gosterge, y=v_first,
+                         marker_color="#C4B5FD", text=[f"{v:.1f}%" if not pd.isna(v) else "" for v in v_first],
                          textposition="inside", textfont=dict(color="white", size=10)))
-    fig.add_trace(go.Bar(name="2028 Hedefi", x=hedefler["gosterge"],
-                         y=hedefler["hedef_2028"],
-                         marker_color="#C4B5FD",
-                         text=[f"{v:.0f}%" for v in hedefler["hedef_2028"]],
-                         textposition="outside", textfont=dict(color=C_MUTED, size=10),
-                         opacity=0.7))
-    for i, row in hedefler.iterrows():
-        renk = C_GREEN if row["tamamlanma"] >= 80 else (C_ORANGE if row["tamamlanma"] >= 60 else C_RED)
-        fig.add_annotation(x=row["gosterge"], y=row["hedef_2028"] + 4,
-                           text=f"%{row['tamamlanma']:.0f}", showarrow=False,
-                           font=dict(color=renk, size=10, family="Inter"))
-    fig.update_layout(**PLOTLY_LAYOUT, barmode="overlay", yaxis_title="%", yaxis_range=[0, 110])
+    fig.add_trace(go.Bar(name=str(int(last["yil"])), x=gosterge, y=v_last,
+                         marker_color=C_ACCENT, text=[f"{v:.1f}%" if not pd.isna(v) else "" for v in v_last],
+                         textposition="outside", textfont=dict(color=C_TEXT, size=10)))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="group", yaxis_title="%", yaxis_range=[0, 110])
     return fig
 
 
@@ -1468,13 +1777,22 @@ def _hedef_fig():
 # 4. CALLBACK'LER
 # ─────────────────────────────────────────────────────────────
 
-@app.callback(Output("sekme-icerik", "children"), Input("ana-sekme", "value"))
-def render_tab(sekme):
-    if sekme == "genel":   return genel_bakis()
-    if sekme == "harita":  return bolgesel_harita()
-    if sekme == "demo":    return demografik()
-    if sekme == "nlp":     return nlp_analizi()
-    if sekme == "karsil":  return karsil_analiz()
+@app.callback(
+    Output("sekme-icerik", "children"),
+    Input("ana-sekme", "value"),
+    Input("global-yil", "value")
+)
+def render_tab(sekme, yil):
+    if sekme == "genel":
+        return genel_bakis()
+    if sekme == "harita":
+        return bolgesel_harita()
+    if sekme == "demo":
+        return demografik(yil)
+    if sekme == "yz":
+        return yz_beceri_analizi(yil)
+    if sekme == "karsil":
+        return karsil_analiz()
     return html.Div("Sekme bulunamadı")
 
 
@@ -1498,7 +1816,7 @@ def update_ts(secili, yil):
     renk_paleti = [C_ACCENT, C_ACCENT2, C_GREEN, C_ORANGE, C_PURPLE, "#EC4899", "#F97316", "#14B8A6"]
     etiket_map = {
         "internet_erisim": "İnternet Erişimi",
-        "akilli_telefon":  "Akıllı Telefon",
+        "dijital_beceri":  "Dijital Beceri",
         "edevlet":         "E-Devlet",
         "eticaret":        "E-Ticaret",
         "sosyal_medya":    "Sosyal Medya",
@@ -1661,7 +1979,7 @@ def update_harita(gosterge, yil):
             + "Dijital Beceri: %{customdata[4]:.1f}<br>"
             + "E-Ticaret: %{customdata[5]:.1f}<br>"
             + "Dijitalleşme Skoru: %{customdata[6]:.1f}<br>"
-            + "Küme: %{customdata[7]}"
+            + "Seviye: %{customdata[7]}"
             + "<extra></extra>"
         ),
     ))
@@ -1760,7 +2078,7 @@ def update_karsil(yil1, yil2):
     row1 = turkey_ts[turkey_ts["yil"] == yil1].iloc[0]
     row2 = turkey_ts[turkey_ts["yil"] == yil2].iloc[0]
 
-    cols = ["internet_erisim","akilli_telefon","edevlet","eticaret",
+    cols = ["internet_erisim","dijital_beceri","edevlet","eticaret",
             "sosyal_medya","cevrimici_egitim","yapay_zeka_farkin","bilgisayar"]
     lbls = ["İnternet","Akıllı Tel.","E-Devlet","E-Ticaret",
             "Sosyal Medya","Çev.Eğitim","YZ Farkın.","Bilgisayar"]
