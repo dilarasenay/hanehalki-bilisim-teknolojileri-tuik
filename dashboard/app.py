@@ -703,13 +703,11 @@ def yz_beceri_tables(yil="all"):
     return pd.DataFrame(rows).sort_values("yil")
 
 
+
 # ─────────────────────────────────────────────────────────────
 # 4. YOUTUBE NLP VERİ YÜKLEME VE GRAFİKLER
 # ─────────────────────────────────────────────────────────────
 
-# Dashboard app.py dosyası bazen dashboard/ klasörü içinde,
-# NLP çıktıları ise proje kökünde gorseller/ klasöründe olabiliyor.
-# Bu yüzden hem BASE_DIR/gorseller hem de BASE_DIR/../gorseller aranır.
 YOUTUBE_NLP_CANDIDATES = [
     os.path.join(BASE_DIR, "gorseller", "youtube_nlp_tam.csv"),
     os.path.join(BASE_DIR, "..", "gorseller", "youtube_nlp_tam.csv"),
@@ -724,13 +722,15 @@ YOUTUBE_TFIDF_CANDIDATES = [
     os.path.join(BASE_DIR, "gorseller", "tfidf_sonuclar.csv"),
     os.path.join(BASE_DIR, "..", "gorseller", "tfidf_sonuclar.csv"),
 ]
+
 YOUTUBE_LDA_CANDIDATES = [
     os.path.join(BASE_DIR, "gorseller", "lda_konular.csv"),
     os.path.join(BASE_DIR, "..", "gorseller", "lda_konular.csv"),
 ]
-YOUTUBE_REP_CANDIDATES = [
-    os.path.join(BASE_DIR, "gorseller", "temsili_yorumlar.csv"),
-    os.path.join(BASE_DIR, "..", "gorseller", "temsili_yorumlar.csv"),
+
+YOUTUBE_COHERENCE_CANDIDATES = [
+    os.path.join(BASE_DIR, "gorseller", "lda_coherence.csv"),
+    os.path.join(BASE_DIR, "..", "gorseller", "lda_coherence.csv"),
 ]
 
 
@@ -754,13 +754,25 @@ def load_youtube_nlp_data():
     main_path = _first_existing(YOUTUBE_NLP_CANDIDATES)
     tfidf_path = _first_existing(YOUTUBE_TFIDF_CANDIDATES)
     lda_path = _first_existing(YOUTUBE_LDA_CANDIDATES)
-    rep_path = _first_existing(YOUTUBE_REP_CANDIDATES)
+    coherence_path = _first_existing(YOUTUBE_COHERENCE_CANDIDATES)
 
     df = read_csv_safe(main_path) if main_path else pd.DataFrame()
     tfidf_df = read_csv_safe(tfidf_path) if tfidf_path else pd.DataFrame()
     lda_df = read_csv_safe(lda_path) if lda_path else pd.DataFrame()
-    rep_df = read_csv_safe(rep_path) if rep_path else pd.DataFrame()
-    return df, tfidf_df, lda_df, rep_df
+    coherence_df = read_csv_safe(coherence_path) if coherence_path else pd.DataFrame()
+
+    if not df.empty:
+        if "duygu" in df.columns:
+            df["duygu"] = df["duygu"].astype(str).str.strip().replace({
+                "pozitif": "Pozitif", "negatif": "Negatif", "nötr": "Nötr",
+                "notr": "Nötr", "neutral": "Nötr", "positive": "Pozitif", "negative": "Negatif",
+            })
+        if "begeni" in df.columns:
+            df["begeni"] = pd.to_numeric(df["begeni"], errors="coerce").fillna(0).astype(int)
+        if "lda_konu" in df.columns:
+            df["lda_konu"] = pd.to_numeric(df["lda_konu"], errors="coerce")
+
+    return df, tfidf_df, lda_df, coherence_df
 
 
 def youtube_kpi_cards(df):
@@ -789,22 +801,65 @@ def youtube_kpi_cards(df):
     ], style={"display": "flex", "gap": "14px", "flexWrap": "wrap", "marginBottom": "14px"})
 
 
+def youtube_nlp_summary(df):
+    if df.empty or "duygu" not in df.columns:
+        return html.Div()
+
+    toplam = len(df)
+    oran = df["duygu"].value_counts(normalize=True) * 100
+    notr = oran.get("Nötr", 0)
+    pozitif = oran.get("Pozitif", 0)
+    negatif = oran.get("Negatif", 0)
+
+    if notr >= pozitif and notr >= negatif:
+        yorum = "Yorumların büyük bölümü nötr sınıfta toplanmıştır. Bu sonuç, YouTube yorumlarında bilgi verme, gündeme tepki gösterme ve konuya katılım sağlama biçimindeki ifadelerin baskın olduğunu göstermektedir."
+    elif pozitif > negatif:
+        yorum = "Pozitif yorum oranı negatif yorum oranından yüksektir. Bu durum, dijitalleşme ve teknoloji temalarının genel olarak olumlu çağrışımlarla ele alındığını göstermektedir."
+    else:
+        yorum = "Negatif yorum oranı daha belirgindir. Bu durum, dijitalleşmeye yönelik kaygı, erişim sorunu, eşitsizlik veya güven eksenli eleştirilerin öne çıktığını göstermektedir."
+
+    return html.Div([
+        html.P("NLP SONUÇ ÖZETİ", style=TITLE_STYLE),
+        html.P("YouTube yorumlarından elde edilen genel toplumsal algı değerlendirmesi", style=SUBTITLE_STYLE),
+        html.Div([
+            html.P(f"Toplam {toplam:,} yorum analiz edilmiştir.".replace(",", "."), style={"margin": "0 0 8px 0"}),
+            html.P(f"Yorumların %{notr:.1f}’i nötr, %{pozitif:.1f}’i pozitif ve %{negatif:.1f}’i negatif olarak sınıflandırılmıştır.", style={"margin": "0 0 8px 0"}),
+            html.P(yorum, style={"margin": "0"}),
+        ], style={"fontSize": "13px", "lineHeight": "1.7", "color": C_TEXT, "fontWeight": "650"}),
+    ], style={**CARD_STYLE, "borderLeft": f"6px solid {C_ACCENT2}", "background": "linear-gradient(135deg, rgba(255,255,255,0.95), rgba(236,254,255,0.76))"})
+
+
 def youtube_sentiment_fig(df):
     if df.empty or "duygu" not in df.columns:
         return _empty_fig("Duygu analizi verisi bulunamadı.")
 
-    counts = df["duygu"].value_counts().reset_index()
+    order = ["Pozitif", "Nötr", "Negatif"]
+    counts = df["duygu"].value_counts().reindex(order).fillna(0).reset_index()
     counts.columns = ["duygu", "sayi"]
     color_map = {"Pozitif": C_GREEN, "Negatif": C_RED, "Nötr": C_ORANGE}
+    total = counts["sayi"].sum()
+    counts["oran"] = counts["sayi"] / total * 100 if total > 0 else 0
 
     fig = go.Figure(go.Bar(
-        x=counts["duygu"],
-        y=counts["sayi"],
+        x=counts["duygu"], y=counts["sayi"],
         marker_color=[color_map.get(x, C_ACCENT) for x in counts["duygu"]],
-        text=counts["sayi"],
+        text=[f"{int(s)}<br>%{o:.1f}" for s, o in zip(counts["sayi"], counts["oran"])],
         textposition="outside",
     ))
-    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="Yorum Sayısı")
+    fig.update_layout(**PLOTLY_LAYOUT, yaxis_title="Yorum Sayısı", showlegend=False)
+    return fig
+
+
+def youtube_sentiment_donut_fig(df):
+    if df.empty or "duygu" not in df.columns:
+        return _empty_fig("Duygu oranı verisi bulunamadı.")
+
+    counts = df["duygu"].value_counts().reindex(["Pozitif", "Nötr", "Negatif"]).fillna(0)
+    fig = go.Figure(go.Pie(
+        labels=counts.index, values=counts.values, hole=0.58,
+        marker=dict(colors=[C_GREEN, C_ORANGE, C_RED]), textinfo="label+percent",
+    ))
+    fig.update_layout(**PLOTLY_LAYOUT, showlegend=True)
     return fig
 
 
@@ -814,14 +869,11 @@ def youtube_keyword_sentiment_fig(df):
 
     pivot = df.groupby(["keyword", "duygu"]).size().reset_index(name="sayi")
     fig = px.bar(
-        pivot,
-        x="keyword",
-        y="sayi",
-        color="duygu",
-        barmode="group",
+        pivot, x="keyword", y="sayi", color="duygu", barmode="group",
         color_discrete_map={"Pozitif": C_GREEN, "Negatif": C_RED, "Nötr": C_ORANGE},
     )
     fig.update_layout(**PLOTLY_LAYOUT, xaxis_title="", yaxis_title="Yorum Sayısı")
+    fig.update_xaxes(tickangle=-25)
     return fig
 
 
@@ -829,23 +881,18 @@ def youtube_word_freq_fig(df):
     if df.empty or "temiz_yorum" not in df.columns:
         return _empty_fig("Kelime frekansı için temiz yorum verisi bulunamadı.")
 
+    noise = {"abi", "abla", "lan", "kanka", "knk", "allah", "amin", "hocam", "video", "kanal", "yorum", "jax", "zooble", "kinger", "gang", "cain", "murat", "soner", "boz", "şarkı", "müzik", "dede", "rahmet", "cennet", "kuş", "güzel", "pozitif", "negatif"}
     words = " ".join(df["temiz_yorum"].dropna().astype(str)).split()
-    freq = pd.DataFrame(Counter(words).most_common(25), columns=["kelime", "frekans"])
+    words = [w for w in words if len(w) > 2 and w not in noise]
+    freq = pd.DataFrame(Counter(words).most_common(22), columns=["kelime", "frekans"])
 
     if freq.empty:
         return _empty_fig("Kelime frekansı hesaplanamadı.")
 
-    fig = go.Figure(go.Bar(
-        x=freq["frekans"],
-        y=freq["kelime"],
-        orientation="h",
-        marker_color=C_ACCENT,
-        text=freq["frekans"],
-        textposition="outside",
-    ))
+    fig = go.Figure(go.Bar(x=freq["frekans"], y=freq["kelime"], orientation="h", marker_color=C_ACCENT, text=freq["frekans"], textposition="outside"))
     layout = {**PLOTLY_LAYOUT}
     layout["yaxis"] = dict(autorange="reversed", tickfont=dict(color=C_TEXT, size=10))
-    fig.update_layout(**layout)
+    fig.update_layout(**layout, xaxis_title="Frekans", yaxis_title="")
     return fig
 
 
@@ -855,100 +902,66 @@ def youtube_tfidf_fig(tfidf_df):
 
     term_col = "terim" if "terim" in tfidf_df.columns else tfidf_df.columns[0]
     score_col = "tfidf_ortalama" if "tfidf_ortalama" in tfidf_df.columns else tfidf_df.columns[-1]
-    data = tfidf_df.head(20).copy()
+    data = tfidf_df.copy()
+    data[term_col] = data[term_col].astype(str)
+    data[score_col] = pd.to_numeric(data[score_col], errors="coerce")
+    data = data[data[score_col].notna()].head(22)
 
-    fig = go.Figure(go.Bar(
-        x=data[score_col],
-        y=data[term_col],
-        orientation="h",
-        marker_color=C_ACCENT2,
-        text=[f"{v:.3f}" for v in data[score_col]],
-        textposition="outside",
-    ))
+    fig = go.Figure(go.Bar(x=data[score_col], y=data[term_col], orientation="h", marker_color=C_ACCENT2, text=[f"{v:.3f}" for v in data[score_col]], textposition="outside"))
     layout = {**PLOTLY_LAYOUT}
     layout["yaxis"] = dict(autorange="reversed", tickfont=dict(color=C_TEXT, size=10))
-    fig.update_layout(**layout)
+    fig.update_layout(**layout, xaxis_title="TF-IDF Skoru", yaxis_title="")
     return fig
 
 
-def youtube_lda_table(lda_df):
-    if lda_df.empty:
-        return html.Div("LDA konu çıktısı bulunamadı.", style={"color": C_MUTED})
+def youtube_lda_distribution_fig(df, lda_df):
+    if df.empty or "lda_konu" not in df.columns:
+        return _empty_fig("LDA konu dağılımı bulunamadı.")
 
-    show_cols = [c for c in ["konu_no", "kelimeler", "agirliklar"] if c in lda_df.columns]
-    if not show_cols:
-        show_cols = lda_df.columns[:3].tolist()
+    counts = df["lda_konu"].value_counts().sort_index().reset_index()
+    counts.columns = ["konu_no", "yorum_sayisi"]
 
-    return html.Div([
-        html.Table([
-            html.Thead(html.Tr([
-                html.Th(col, style={"textAlign": "left", "padding": "10px", "color": C_TEXT})
-                for col in show_cols
-            ])),
-            html.Tbody([
-                html.Tr([
-                    html.Td(str(row[col])[:220], style={
-                        "padding": "10px",
-                        "borderTop": f"1px solid {C_BORDER}",
-                        "fontSize": "12px",
-                        "color": C_TEXT,
-                    })
-                    for col in show_cols
-                ])
-                for _, row in lda_df.iterrows()
-            ])
-        ], style={"width": "100%", "borderCollapse": "collapse"})
-    ], style={"maxHeight": "340px", "overflowY": "auto"})
+    konu_map = {}
+    if not lda_df.empty and "konu_no" in lda_df.columns:
+        for _, row in lda_df.iterrows():
+            konu_no = row.get("konu_no")
+            baslik = row.get("konu_basligi", f"Konu {konu_no}")
+            konu_map[konu_no] = baslik
+
+    counts["konu_adi"] = counts["konu_no"].apply(lambda x: konu_map.get(x, f"Konu {x}"))
+    fig = go.Figure(go.Bar(x=counts["yorum_sayisi"], y=counts["konu_adi"], orientation="h", marker_color=C_PURPLE, text=counts["yorum_sayisi"], textposition="outside"))
+    layout = {**PLOTLY_LAYOUT}
+    layout["yaxis"] = dict(autorange="reversed", tickfont=dict(color=C_TEXT, size=11))
+    fig.update_layout(**layout, xaxis_title="Yorum Sayısı", yaxis_title="")
+    return fig
 
 
-def youtube_comments_table(df, title):
-    if df.empty:
-        return html.Div(f"{title} bulunamadı.", style={**CARD_STYLE, "color": C_MUTED})
+def youtube_coherence_fig(coherence_df):
+    if coherence_df.empty or "konu_sayisi" not in coherence_df.columns or "coherence" not in coherence_df.columns:
+        return _empty_fig("LDA coherence çıktısı bulunamadı.")
 
-    cols = [c for c in ["duygu", "yorum", "begeni", "keyword"] if c in df.columns]
-    if not cols:
-        cols = df.columns[:4].tolist()
+    data = coherence_df.copy()
+    data["konu_sayisi"] = pd.to_numeric(data["konu_sayisi"], errors="coerce")
+    data["coherence"] = pd.to_numeric(data["coherence"], errors="coerce")
+    data = data.dropna()
+    if data.empty:
+        return _empty_fig("LDA coherence çıktısı okunamadı.")
 
-    data = df.copy()
-    if "begeni" in data.columns:
-        data = data.sort_values("begeni", ascending=False)
-    data = data.head(10)
-
-    return html.Div([
-        html.P(title, style=TITLE_STYLE),
-        html.Table([
-            html.Thead(html.Tr([
-                html.Th(col, style={"textAlign": "left", "padding": "10px", "color": C_TEXT})
-                for col in cols
-            ])),
-            html.Tbody([
-                html.Tr([
-                    html.Td(str(row[col])[:230], style={
-                        "padding": "10px",
-                        "borderTop": f"1px solid {C_BORDER}",
-                        "fontSize": "12px",
-                        "color": C_TEXT,
-                    })
-                    for col in cols
-                ])
-                for _, row in data.iterrows()
-            ])
-        ], style={"width": "100%", "borderCollapse": "collapse"})
-    ], style={**CARD_STYLE, "overflowX": "auto", "flex": "1", "minWidth": "360px"})
+    best = data.sort_values("coherence", ascending=False).iloc[0]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data["konu_sayisi"], y=data["coherence"], mode="lines+markers", line=dict(color=C_ACCENT2, width=3), marker=dict(size=9, color=C_ACCENT), name="Coherence Score"))
+    fig.add_trace(go.Scatter(x=[best["konu_sayisi"]], y=[best["coherence"]], mode="markers+text", marker=dict(size=15, color=C_ORANGE), text=["En iyi"], textposition="top center", name="En iyi konu sayısı"))
+    fig.update_layout(**PLOTLY_LAYOUT, xaxis_title="Konu Sayısı", yaxis_title="Coherence Score")
+    return fig
 
 
 def youtube_image_card(title, filename):
     asset_path = os.path.join(BASE_DIR, "assets", filename)
     if not os.path.exists(asset_path):
         return html.Div()
-
     return html.Div([
         html.P(title, style=TITLE_STYLE),
-        html.Img(src=f"/assets/{filename}", style={
-            "width": "100%",
-            "borderRadius": "18px",
-            "border": f"1px solid {C_BORDER}",
-        })
+        html.Img(src=f"/assets/{filename}", style={"width": "100%", "borderRadius": "18px", "border": f"1px solid {C_BORDER}"})
     ], style={**CARD_STYLE, "flex": "1", "minWidth": "360px"})
 
 
@@ -1774,7 +1787,7 @@ def karsil_analiz():
 
 
 def youtube_nlp_analizi():
-    df, tfidf_df, lda_df, rep_df = load_youtube_nlp_data()
+    df, tfidf_df, lda_df, coherence_df = load_youtube_nlp_data()
 
     if df.empty:
         return html.Div([
@@ -1784,88 +1797,69 @@ def youtube_nlp_analizi():
             ], style=CARD_STYLE)
         ])
 
-    top_comments = df.copy()
-    if "begeni" in top_comments.columns:
-        top_comments = top_comments.sort_values("begeni", ascending=False)
-
     return html.Div([
         html.Div([
-            html.Div("YOUTUBE NLP", style={
-                "fontSize": "12px",
-                "fontWeight": "950",
-                "letterSpacing": "1px",
-                "color": "rgba(255,255,255,.90)",
-                "marginBottom": "10px",
-            }),
-            html.Div("Dijitalleşmeye Yönelik Toplumsal Algı", style={
-                "fontSize": "34px",
-                "fontWeight": "950",
-                "color": "white",
-                "lineHeight": "1.05",
-            }),
-            html.Div("YouTube yorumları üzerinden duygu analizi, kelime frekansı, TF-IDF ve LDA konu modelleme çıktıları", style={
-                "fontSize": "13px",
-                "fontWeight": "650",
-                "color": "rgba(255,255,255,.78)",
-                "marginTop": "8px",
-            }),
-        ], style={
-            "padding": "28px 30px",
-            "borderRadius": "30px",
-            "marginBottom": "18px",
-            "background": "linear-gradient(135deg,#8B5CF6,#EC4899,#06B6D4)",
-            "boxShadow": "0 28px 60px rgba(139,92,246,.28)",
-        }),
+            html.Div("YOUTUBE NLP", style={"fontSize": "12px", "fontWeight": "950", "letterSpacing": "1px", "color": "rgba(255,255,255,.90)", "marginBottom": "10px"}),
+            html.Div("Dijitalleşmeye Yönelik Toplumsal Algı", style={"fontSize": "34px", "fontWeight": "950", "color": "white", "lineHeight": "1.05"}),
+            html.Div("YouTube yorumları üzerinden duygu analizi, kelime frekansı, TF-IDF, LDA konu dağılımı ve model tutarlılığı", style={"fontSize": "13px", "fontWeight": "650", "color": "rgba(255,255,255,.78)", "marginTop": "8px"}),
+        ], style={"padding": "28px 30px", "borderRadius": "30px", "marginBottom": "18px", "background": "linear-gradient(135deg,#8B5CF6,#EC4899,#06B6D4)", "boxShadow": "0 28px 60px rgba(139,92,246,.28)"}),
 
         youtube_kpi_cards(df),
+        youtube_nlp_summary(df),
 
         html.Div([
             html.Div([
                 html.P("DUYGU DAĞILIMI", style=TITLE_STYLE),
                 html.P("Pozitif, negatif ve nötr yorum sayıları", style=SUBTITLE_STYLE),
                 dcc.Graph(figure=youtube_sentiment_fig(df), style={"height": "330px"}),
-            ], style={**CARD_STYLE, "flex": "1"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
+            html.Div([
+                html.P("DUYGU ORANI", style=TITLE_STYLE),
+                html.P("Yorum sınıflarının genel oranı", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=youtube_sentiment_donut_fig(df), style={"height": "330px"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
+        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
 
+        html.Div([
             html.Div([
                 html.P("ANAHTAR KELİMEYE GÖRE DUYGU", style=TITLE_STYLE),
                 html.P("Arama kelimeleri bazında toplumsal algı dağılımı", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_keyword_sentiment_fig(df), style={"height": "330px"}),
-            ], style={**CARD_STYLE, "flex": "1"}),
+                dcc.Graph(figure=youtube_keyword_sentiment_fig(df), style={"height": "360px"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "860px"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
 
         html.Div([
             html.Div([
                 html.P("EN SIK KULLANILAN KELİMELER", style=TITLE_STYLE),
-                html.P("Temizlenmiş yorumlar üzerinden kelime frekansı", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_word_freq_fig(df), style={"height": "360px"}),
-            ], style={**CARD_STYLE, "flex": "1"}),
-
+                html.P("Temizlenmiş yorumlar üzerinden anlamlı kelime frekansı", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=youtube_word_freq_fig(df), style={"height": "370px"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
             html.Div([
                 html.P("TF-IDF TERİMLERİ", style=TITLE_STYLE),
                 html.P("Dijitalleşme söylemini ayıran güçlü terimler", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_tfidf_fig(tfidf_df), style={"height": "360px"}),
-            ], style={**CARD_STYLE, "flex": "1"}),
+                dcc.Graph(figure=youtube_tfidf_fig(tfidf_df), style={"height": "370px"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
 
         html.Div([
-            html.P("LDA KONU MODELLEME ÖZETİ", style=TITLE_STYLE),
-            html.P("YouTube yorumlarından çıkarılan temel konu kümeleri", style=SUBTITLE_STYLE),
-            youtube_lda_table(lda_df),
-        ], style=CARD_STYLE),
-
-        html.Div([
-            youtube_comments_table(rep_df, "TEMSİLİ YORUMLAR"),
-            youtube_comments_table(top_comments, "EN ÇOK BEĞENİ ALAN YORUMLAR"),
+            html.Div([
+                html.P("LDA KONU DAĞILIMI", style=TITLE_STYLE),
+                html.P("Yorumların konu kümelerine göre dağılımı", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=youtube_lda_distribution_fig(df, lda_df), style={"height": "360px"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
+            html.Div([
+                html.P("LDA COHERENCE SKORU", style=TITLE_STYLE),
+                html.P("En uygun konu sayısının model tutarlılığına göre seçimi", style=SUBTITLE_STYLE),
+                dcc.Graph(figure=youtube_coherence_fig(coherence_df), style={"height": "360px"}),
+            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
 
         html.Div([
             youtube_image_card("Kelime Bulutu", "03_kelime_bulutu.png"),
-            youtube_image_card("LDA Konuları", "06_lda_konular.png"),
             youtube_image_card("Zaman Serisi", "08_zaman_serisi.png"),
-            youtube_image_card("Etkileşim Analizi", "09_top_engagement.png"),
+            youtube_image_card("LDA Konu Grafiği", "06_lda_konular.png"),
         ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
     ])
-
 
 # ─────────────────────────────────────────────────────────────
 # 7. LAYOUT
