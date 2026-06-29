@@ -28,15 +28,14 @@ except Exception:
 # 1. GENEL AYARLAR
 # ─────────────────────────────────────────────────────────────
 
-BASE_DIR = os.path.dirname(__file__)
-
 DATA_CANDIDATES = [
+    os.path.join(BASE_DIR, "data", "butunveriler_sample.csv"),
     os.path.join(BASE_DIR, "data", "bütünveriler.csv"),
     os.path.join(BASE_DIR, "data", "butunveriler.csv"),
-    os.path.join(BASE_DIR, "data", "bütünverilerr"),
+    os.path.join(BASE_DIR, "data", "bütünveriler"),
     os.path.join(BASE_DIR, "bütünveriler.csv"),
     os.path.join(BASE_DIR, "butunveriler.csv"),
-    os.path.join(BASE_DIR, "bütünverilerr"),
+    os.path.join(BASE_DIR, "bütünveriler"),
     os.path.join(BASE_DIR, "..", "data", "bütünveriler.csv"),
     os.path.join(BASE_DIR, "..", "data", "butunveriler.csv"),
 ]
