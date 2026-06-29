@@ -1,0 +1,7 @@
+﻿konu_no,konu_basligi,kelimeler,agirliklar
+1,Genel Toplumsal Algı,"negatif, aşak, yukar, iniyor, çıkıyor, dede, rahmet, cennet, gidiyor, gül, sepet, kirli, müzik, meka, drone","0.3852, 0.0292, 0.0238, 0.0231, 0.0203, 0.0129, 0.0126, 0.0088, 0.0077, 0.0074, 0.0074, 0.0072, 0.0067, 0.0065, 0.0063"
+2,E-Devlet ve Kamu Hizmetleri,"türki, ülke, şarkı, dünya, türk, nato, zama, yol, devlet, abd, ver, çin, büyük, savaş, geç","0.0229, 0.0197, 0.0189, 0.0116, 0.0101, 0.0083, 0.0079, 0.0079, 0.0078, 0.0073, 0.0073, 0.0069, 0.0068, 0.0067, 0.0065"
+3,Dijital Eğitim,"çocuk, gel, yap, yıl, okul, ada, gün, sonra, lütfe, hal, bak, keşke, yaş, diyor, aynı","0.024, 0.0232, 0.0232, 0.0172, 0.013, 0.0119, 0.0111, 0.0111, 0.0103, 0.0103, 0.0103, 0.0101, 0.0088, 0.0088, 0.0082"
+4,Genel Toplumsal Algı,"güzel, kuş, teşekkür, hoca, murat, boz, sağlık, eder, emek, cok, eski, bilgi, harik, soner, gerçek","0.0539, 0.0262, 0.0228, 0.0227, 0.0218, 0.0155, 0.015, 0.0146, 0.0132, 0.013, 0.0102, 0.0094, 0.0087, 0.008, 0.0071"
+5,Genel Toplumsal Algı,"gerçek, yer, unicef, bun, doğru, kedi, tatlı, you, yap, hadis, ediyor, kadı, ses, kendi, kız","0.0184, 0.014, 0.0136, 0.0113, 0.011, 0.0099, 0.0089, 0.008, 0.0077, 0.0074, 0.0073, 0.0071, 0.007, 0.0069, 0.0067"
+6,Genel Toplumsal Algı,"pozitif, burha, soluca, gazze, seviyor, sahne, love, yardı, abone, komik, sevdik, şarkıs, benzedi, sınıf, kız","0.6731, 0.021, 0.0076, 0.006, 0.0051, 0.005, 0.0048, 0.0045, 0.0044, 0.0035, 0.0035, 0.0034, 0.0034, 0.0034, 0.0034"
