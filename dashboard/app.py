@@ -1314,15 +1314,39 @@ def _yz_trend_fig(yil="all"):
 
 def _beceri_fig(yil="all"):
     df = _filtered_df_by_year(yil)
+
     rows = []
     for col in DIJITAL_BECERI_COLS:
-        label = col.replace("dijital beceri", "").strip().title()
-        rows.append({"beceri": label, "oran": _safe_indicator(df, col)})
-    beceri_df = pd.DataFrame(rows).dropna(subset=["oran"])
+        if df is not None and not df.empty and col in df.columns:
+            label = col.replace("dijital beceri", "").strip().title()
+            oran = _safe_indicator(df, col)
+            rows.append({"beceri": label, "oran": oran})
+
+    beceri_df = pd.DataFrame(rows)
+
+    if beceri_df.empty or "oran" not in beceri_df.columns:
+        return _empty_fig("Dijital beceri sütunları için yeterli veri bulunamadı.")
+
+    beceri_df = beceri_df.dropna(subset=["oran"])
+
     if beceri_df.empty:
         return _empty_fig("Dijital beceri sütunları için yeterli veri bulunamadı.")
-    fig = go.Figure(go.Bar(x=beceri_df["oran"], y=beceri_df["beceri"], orientation="h", marker_color=C_ACCENT2, text=[f"{v:.1f}%" for v in beceri_df["oran"]], textposition="outside"))
-    fig.update_layout(**PLOTLY_LAYOUT, xaxis_title="Oran (%)", yaxis_title="")
+
+    fig = go.Figure(go.Bar(
+        x=beceri_df["oran"],
+        y=beceri_df["beceri"],
+        orientation="h",
+        marker_color=C_ACCENT2,
+        text=[f"{v:.1f}%" for v in beceri_df["oran"]],
+        textposition="outside"
+    ))
+
+    fig.update_layout(
+        **PLOTLY_LAYOUT,
+        xaxis_title="Oran (%)",
+        yaxis_title=""
+    )
+
     return fig
 
 
