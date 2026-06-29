@@ -1,47 +1,14 @@
 """
-=============================================================
- TÜRKİYE DİJİTALLEŞME DASHBOARD + YOUTUBE NLP
- Dilara Şenay | TÜBİTAK 2209-A Araştırma Projesi
- Kaynak: TÜİK Hanehalkı Bilişim Teknolojileri Kullanım Araştırması
- NLP Kaynak: YouTube yorumları
-=============================================================
-Kurulum:
-    pip install dash plotly pandas numpy statsmodels
-
+Türkiye Dijitalleşme Dashboard + YouTube NLP - Streamlit sürümü
 Çalıştırma:
-    python app.py
-
-Tarayıcıda aç:
-    http://127.0.0.1:8050
-=============================================================
-
-Klasör yapısı önerisi:
-    app.py
-    data/
-        bütünveriler.csv
-        tr_ibbs1.geojson
-    gorseller/
-        youtube_nlp_tam.csv
-        tfidf_sonuclar.csv
-        lda_konular.csv
-        temsili_yorumlar.csv
-    assets/
-        03_kelime_bulutu.png
-        06_lda_konular.png
-        08_zaman_serisi.png
-        09_top_engagement.png
-
-Not:
-- YouTube PNG görsellerinin dashboardda görünmesi için ilgili png dosyalarını assets klasörüne kopyalayın.
-- YouTube CSV dosyaları gorseller klasöründe yoksa dashboard çökmez, uyarı gösterir.
+    pip install streamlit plotly pandas numpy statsmodels
+    streamlit run app_streamlit.py
 """
-
 import json
 import os
 from collections import Counter
 
-import dash
-from dash import dcc, html, Input, Output
+import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -51,6 +18,9 @@ import numpy as np
 try:
     import statsmodels.api as sm
 except Exception:
+    sm = None
+
+
     sm = None
 
 
@@ -955,293 +925,6 @@ def youtube_coherence_fig(coherence_df):
     return fig
 
 
-def youtube_image_card(title, filename):
-    asset_path = os.path.join(BASE_DIR, "assets", filename)
-    if not os.path.exists(asset_path):
-        return html.Div()
-    return html.Div([
-        html.P(title, style=TITLE_STYLE),
-        html.Img(src=f"/assets/{filename}", style={"width": "100%", "borderRadius": "18px", "border": f"1px solid {C_BORDER}"})
-    ], style={**CARD_STYLE, "flex": "1", "minWidth": "360px"})
-
-
-# ─────────────────────────────────────────────────────────────
-# 5. DASH UYGULAMASI
-# ─────────────────────────────────────────────────────────────
-
-app = dash.Dash(
-    __name__,
-    title="Türkiye Dijitalleşme Dashboard | Dilara Şenay",
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
-)
-app.config.suppress_callback_exceptions = True
-
-app.index_string = """
-<!DOCTYPE html>
-<html>
-<head>
-    {%metas%}
-    <title>{%title%}</title>
-    {%favicon%}
-    {%css%}
-    <style>
-        * { box-sizing: border-box; }
-        body { margin: 0; }
-        .Select-control {
-            border-radius: 16px !important;
-            border: 1px solid rgba(139,92,246,0.22) !important;
-            background: rgba(255,255,255,0.82) !important;
-            backdrop-filter: blur(16px) !important;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 14px 34px rgba(139,92,246,0.13) !important;
-            min-height: 44px !important;
-        }
-        .Select-value-label, .Select-placeholder {
-            color: #2E1065 !important;
-            font-weight: 850 !important;
-            letter-spacing: .15px !important;
-        }
-        .Select-arrow { border-top-color: #7C3AED !important; }
-        .Select-menu-outer {
-            border-radius: 18px !important;
-            overflow: hidden !important;
-            box-shadow: 0 24px 56px rgba(139,92,246,0.24) !important;
-            border: 1px solid rgba(139,92,246,0.20) !important;
-            z-index: 9999 !important;
-            background: rgba(255,255,255,.96) !important;
-        }
-        .Select-option { padding: 11px 16px !important; font-weight: 800; color: #312E81 !important; }
-        .Select-option.is-focused { background: linear-gradient(90deg, #F3E8FF, #ECFEFF) !important; }
-        .Select-option.is-selected { background: linear-gradient(90deg, #8B5CF6, #06B6D4) !important; color: white !important; }
-        .tab {
-            border: none !important;
-            border-radius: 20px !important;
-            background: rgba(255,255,255,0.38) !important;
-            color: #4C3F73 !important;
-            font-weight: 900 !important;
-            padding: 18px 24px !important;
-            transition: all .2s ease !important;
-        }
-        .tab--selected {
-            color: white !important;
-            background: linear-gradient(135deg, #8B5CF6, #EC4899, #06B6D4) !important;
-            box-shadow: 0 18px 38px rgba(139,92,246,0.26) !important;
-            border: 1px solid rgba(255,255,255,.45) !important;
-        }
-    </style>
-</head>
-<body>
-    {%app_entry%}
-    <footer>
-        {%config%}
-        {%scripts%}
-        {%renderer%}
-    </footer>
-</body>
-</html>
-"""
-
-
-def mini_trend_fig(col, renk):
-    fig = go.Figure()
-    if col in turkey_ts.columns:
-        fig.add_trace(go.Scatter(
-            x=turkey_ts["yil"],
-            y=turkey_ts[col],
-            mode="lines+markers",
-            line=dict(color=renk, width=2.4, shape="spline"),
-            marker=dict(size=4, color=renk),
-            hoverinfo="skip",
-            showlegend=False,
-        ))
-    fig.update_layout(
-        paper_bgcolor="rgba(255,255,255,0)",
-        plot_bgcolor="rgba(255,255,255,0)",
-        margin=dict(l=0, r=0, t=0, b=0),
-        height=58,
-        xaxis=dict(visible=False),
-        yaxis=dict(visible=False),
-    )
-    return fig
-
-
-def kpi_card(baslik, deger, alt, trend, renk=C_ACCENT, seri=None):
-    return html.Div([
-        html.Div([
-            html.Div([
-                html.Div(baslik.upper(), style={
-                    "color": C_TEXT,
-                    "fontSize": "11px",
-                    "fontWeight": "850",
-                    "letterSpacing": "0.3px",
-                    "marginBottom": "7px",
-                }),
-                html.Div(deger, style={
-                    "fontSize": "30px",
-                    "fontWeight": "950",
-                    "color": renk,
-                    "lineHeight": "1",
-                    "marginBottom": "7px",
-                }),
-                html.Div(alt, style={"color": C_MUTED, "fontSize": "10px", "fontWeight": "650", "lineHeight": "1.35"}),
-                html.Div(trend, style={
-                    "color": C_GREEN,
-                    "fontSize": "10px",
-                    "fontWeight": "850",
-                    "marginTop": "10px",
-                }),
-            ], style={"flex": "1"}),
-            html.Div([
-                html.Div(baslik[:1].upper(), style={
-                    "width": "38px",
-                    "height": "38px",
-                    "borderRadius": "13px",
-                    "display": "flex",
-                    "alignItems": "center",
-                    "justifyContent": "center",
-                    "background": f"linear-gradient(135deg, {renk}22, {renk}44)",
-                    "color": renk,
-                    "fontWeight": "900",
-                    "fontSize": "17px",
-                    "border": f"1px solid {renk}33",
-                }),
-            ], style={"display": "flex", "alignItems": "flex-start"}),
-        ], style={"display": "flex", "justifyContent": "space-between", "gap": "10px"}),
-        dcc.Graph(figure=mini_trend_fig(seri, renk), config={"displayModeBar": False}, style={"height": "48px", "marginTop": "6px"}) if seri else html.Div(),
-    ], style={
-        **CARD_STYLE,
-        "padding": "16px 18px 12px",
-        "minHeight": "138px",
-        "borderTop": f"5px solid {renk}",
-        "background": f"radial-gradient(circle at 85% 0%, {renk}26, transparent 34%), linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.74))",
-        "boxShadow": f"0 22px 48px {renk}22",
-    })
-
-
-def make_kpi_row(yil):
-    tumu = yil == "all"
-    aktif_yil = max(YILLAR) if tumu else int(yil)
-    row = turkey_ts[turkey_ts["yil"] == aktif_yil].iloc[0]
-    base = turkey_ts[turkey_ts["yil"] == min(YILLAR)].iloc[0]
-
-    cards = [
-        ("İnternet Erişimi", "internet_erisim", C_ACCENT, "Hanehalkı erişimi"),
-        ("E-Devlet Kullanımı", "edevlet", C_ACCENT2, "Kamu hizmetleri"),
-        ("Dijital Beceri", "dijital_beceri", C_GREEN, "Temel dijital yetkinlik"),
-        ("E-Ticaret Kullanımı", "eticaret", C_ORANGE, "Son 12 ay kullanımı"),
-        ("YZ Farkındalığı", "yapay_zeka_farkin", C_PURPLE, "Kullanım / farkındalık"),
-    ]
-
-    return html.Div([
-        html.Div(
-            kpi_card(
-                baslik=title,
-                deger=fmt_pct(row[col]),
-                alt=(f"{min(YILLAR)}–{max(YILLAR)} genel dönem · {desc}" if tumu else f"{aktif_yil} yılı · {desc}"),
-                trend=f"{fmt_delta(row[col] - base[col])} ({min(YILLAR)} → {aktif_yil})",
-                renk=color,
-                seri=col,
-            ),
-            style={"flex": "1", "minWidth": "185px"}
-        )
-        for title, col, color, desc in cards
-    ], style={"display": "flex", "gap": "14px", "flexWrap": "wrap", "marginBottom": "14px"})
-
-
-def make_hero_row(yil):
-    tumu = yil == "all"
-    aktif_yil = max(YILLAR) if tumu else int(yil)
-    row = turkey_ts[turkey_ts["yil"] == aktif_yil].iloc[0]
-    base = turkey_ts[turkey_ts["yil"] == min(YILLAR)].iloc[0]
-
-    score_cols = ["internet_erisim", "edevlet", "eticaret", "dijital_beceri"]
-    score_now = safe_nanmean([row[c] for c in score_cols])
-    score_base = safe_nanmean([base[c] for c in score_cols])
-    delta = score_now - score_base if not pd.isna(score_now) and not pd.isna(score_base) else np.nan
-    label = "Genel dönem görünümü" if tumu else f"{aktif_yil} yılı görünümü"
-    caption = f"{min(YILLAR)}–{max(YILLAR)} dönemi CSV’den hesaplandı" if tumu else f"{min(YILLAR)} yılına göre {aktif_yil} seviyesi"
-
-    def pill(text, color, bg):
-        return html.Span(text, style={
-            "background": bg,
-            "color": color,
-            "padding": "8px 12px",
-            "borderRadius": "999px",
-            "fontSize": "11px",
-            "fontWeight": "900",
-            "letterSpacing": "0.2px",
-            "whiteSpace": "nowrap",
-        })
-
-    return html.Div([
-        html.Div([
-            html.Div("DİJİTAL DÖNÜŞÜM SKORU", style={
-                "fontSize": "12px",
-                "fontWeight": "950",
-                "letterSpacing": "1px",
-                "color": "rgba(255,255,255,.92)",
-                "marginBottom": "10px",
-            }),
-            html.Div([
-                html.Span(fmt_num(score_now), style={"fontSize": "52px", "fontWeight": "950", "lineHeight": "0.95", "color": "white"}),
-                html.Span(" / 100", style={"fontSize": "22px", "fontWeight": "850", "color": "rgba(255,255,255,.72)", "marginLeft": "4px"}),
-            ], style={"display": "flex", "alignItems": "baseline"}),
-            html.Div(label, style={"fontSize": "15px", "fontWeight": "850", "color": "white", "marginTop": "9px"}),
-            html.Div(caption, style={"fontSize": "12px", "fontWeight": "650", "color": "rgba(255,255,255,.78)", "marginTop": "4px"}),
-        ], style={
-            "flex": "1.15",
-            "minWidth": "280px",
-            "padding": "28px 30px",
-            "borderRadius": "28px",
-            "background": "linear-gradient(135deg,#7C3AED,#8B5CF6,#06B6D4)",
-            "boxShadow": "0 28px 60px rgba(124,58,237,.28)",
-        }),
-
-        html.Div([
-            html.Div("DÖNEM DEĞİŞİMİ", style={"fontSize": "12px", "fontWeight": "950", "letterSpacing": ".6px", "color": C_MUTED, "marginBottom": "8px"}),
-            html.Div(fmt_delta(delta).replace("↑ ", ""), style={"fontSize": "28px", "fontWeight": "950", "color": C_GREEN}),
-            html.Div(f"{min(YILLAR)} → {aktif_yil}", style={"fontSize": "12px", "fontWeight": "750", "color": C_MUTED}),
-            html.Div(style={"height": "9px", "borderRadius": "999px", "background": "rgba(139,92,246,0.12)", "marginTop": "14px", "overflow": "hidden"}, children=[
-                html.Div(style={
-                    "width": f"{0 if pd.isna(score_now) else min(score_now,100):.0f}%",
-                    "height": "100%",
-                    "background": "linear-gradient(90deg,#8B5CF6,#EC4899,#06B6D4)",
-                    "borderRadius": "999px",
-                })
-            ]),
-        ], style={
-            "flex": ".75",
-            "minWidth": "250px",
-            "background": "rgba(255,255,255,0.78)",
-            "border": "1px solid rgba(139,92,246,0.14)",
-            "borderRadius": "28px",
-            "padding": "24px 26px",
-            "boxShadow": "0 20px 45px rgba(139,92,246,.10)",
-        }),
-
-        html.Div([
-            pill("Nicel veri: TÜİK", "#6D28D9", "rgba(139,92,246,0.12)"),
-            pill("Nitel veri: YouTube NLP", "#DB2777", "rgba(236,72,153,0.12)"),
-            pill("Odak alanı: Bölgesel uçurum", "#08788F", "rgba(6,182,212,0.12)"),
-        ], style={"display": "flex", "gap": "10px", "alignItems": "stretch", "flexDirection": "column", "justifyContent": "center", "flex": ".9", "minWidth": "260px"}),
-    ], style={
-        "display": "flex",
-        "gap": "18px",
-        "alignItems": "stretch",
-        "justifyContent": "space-between",
-        "padding": "18px",
-        "marginBottom": "18px",
-        "borderRadius": "32px",
-        "background": "linear-gradient(135deg, rgba(255,255,255,.74), rgba(255,255,255,.52))",
-        "backdropFilter": "blur(20px)",
-        "border": "1px solid rgba(255,255,255,.72)",
-        "boxShadow": "0 24px 60px rgba(139,92,246,.14)",
-        "overflow": "hidden",
-    })
-
-
-# ─────────────────────────────────────────────────────────────
-# 6. TAB İÇERİKLERİ
-# ─────────────────────────────────────────────────────────────
 
 def _pandemi_fig(yil="all"):
     fig = go.Figure()
@@ -1786,227 +1469,7 @@ def karsil_analiz():
     ])
 
 
-def youtube_nlp_analizi():
-    df, tfidf_df, lda_df, coherence_df = load_youtube_nlp_data()
 
-    if df.empty:
-        return html.Div([
-            html.Div([
-                html.P("YOUTUBE NLP ÇIKTILARI BULUNAMADI", style=TITLE_STYLE),
-                html.P("youtube_nlp_tam.csv dosyasını proje kökündeki gorseller klasörüne veya dashboard/gorseller klasörüne ekleyin.", style=SUBTITLE_STYLE),
-            ], style=CARD_STYLE)
-        ])
-
-    return html.Div([
-        html.Div([
-            html.Div("YOUTUBE NLP", style={"fontSize": "12px", "fontWeight": "950", "letterSpacing": "1px", "color": "rgba(255,255,255,.90)", "marginBottom": "10px"}),
-            html.Div("Dijitalleşmeye Yönelik Toplumsal Algı", style={"fontSize": "34px", "fontWeight": "950", "color": "white", "lineHeight": "1.05"}),
-            html.Div("YouTube yorumları üzerinden duygu analizi, kelime frekansı, TF-IDF, LDA konu dağılımı ve model tutarlılığı", style={"fontSize": "13px", "fontWeight": "650", "color": "rgba(255,255,255,.78)", "marginTop": "8px"}),
-        ], style={"padding": "28px 30px", "borderRadius": "30px", "marginBottom": "18px", "background": "linear-gradient(135deg,#8B5CF6,#EC4899,#06B6D4)", "boxShadow": "0 28px 60px rgba(139,92,246,.28)"}),
-
-        youtube_kpi_cards(df),
-        youtube_nlp_summary(df),
-
-        html.Div([
-            html.Div([
-                html.P("DUYGU DAĞILIMI", style=TITLE_STYLE),
-                html.P("Pozitif, negatif ve nötr yorum sayıları", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_sentiment_fig(df), style={"height": "330px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
-            html.Div([
-                html.P("DUYGU ORANI", style=TITLE_STYLE),
-                html.P("Yorum sınıflarının genel oranı", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_sentiment_donut_fig(df), style={"height": "330px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
-        html.Div([
-            html.Div([
-                html.P("ANAHTAR KELİMEYE GÖRE DUYGU", style=TITLE_STYLE),
-                html.P("Arama kelimeleri bazında toplumsal algı dağılımı", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_keyword_sentiment_fig(df), style={"height": "360px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "860px"}),
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
-        html.Div([
-            html.Div([
-                html.P("EN SIK KULLANILAN KELİMELER", style=TITLE_STYLE),
-                html.P("Temizlenmiş yorumlar üzerinden anlamlı kelime frekansı", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_word_freq_fig(df), style={"height": "370px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
-            html.Div([
-                html.P("TF-IDF TERİMLERİ", style=TITLE_STYLE),
-                html.P("Dijitalleşme söylemini ayıran güçlü terimler", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_tfidf_fig(tfidf_df), style={"height": "370px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
-        html.Div([
-            html.Div([
-                html.P("LDA KONU DAĞILIMI", style=TITLE_STYLE),
-                html.P("Yorumların konu kümelerine göre dağılımı", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_lda_distribution_fig(df, lda_df), style={"height": "360px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
-            html.Div([
-                html.P("LDA COHERENCE SKORU", style=TITLE_STYLE),
-                html.P("En uygun konu sayısının model tutarlılığına göre seçimi", style=SUBTITLE_STYLE),
-                dcc.Graph(figure=youtube_coherence_fig(coherence_df), style={"height": "360px"}),
-            ], style={**CARD_STYLE, "flex": "1", "minWidth": "420px"}),
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-
-        html.Div([
-            youtube_image_card("Kelime Bulutu", "03_kelime_bulutu.png"),
-            youtube_image_card("Zaman Serisi", "08_zaman_serisi.png"),
-            youtube_image_card("LDA Konu Grafiği", "06_lda_konular.png"),
-        ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"}),
-    ])
-
-# ─────────────────────────────────────────────────────────────
-# 7. LAYOUT
-# ─────────────────────────────────────────────────────────────
-
-app.layout = html.Div(style={
-    "background": "radial-gradient(circle at 10% 5%, rgba(236,72,153,0.18) 0%, transparent 24%), radial-gradient(circle at 88% 0%, rgba(6,182,212,0.22) 0%, transparent 28%), radial-gradient(circle at 50% 18%, rgba(139,92,246,0.18) 0%, transparent 30%), linear-gradient(135deg, #FFF7FD 0%, #F4EEFF 45%, #EAFBFF 100%)",
-    "minHeight": "100vh",
-    "fontFamily": "Inter, system-ui, sans-serif",
-    "padding": "0",
-}, children=[
-    html.Div([
-        html.Div([
-            html.Div("TR", style={
-                "fontSize": "28px",
-                "fontWeight": "900",
-                "color": "white",
-                "marginRight": "18px",
-                "letterSpacing": "1px",
-                "width": "64px",
-                "height": "64px",
-                "borderRadius": "20px",
-                "background": "linear-gradient(135deg, #8B5CF6, #06B6D4)",
-                "display": "flex",
-                "alignItems": "center",
-                "justifyContent": "center",
-                "boxShadow": "0 16px 34px rgba(139,92,246,0.26)",
-            }),
-            html.Div([
-                html.H1("Türkiye Dijitalleşme Endeksi", style={
-                    "color": C_TEXT,
-                    "fontSize": "34px",
-                    "fontWeight": "950",
-                    "margin": "0",
-                    "letterSpacing": "0.2px",
-                    "lineHeight": "1.05",
-                }),
-                html.P(
-                    "Yapay Zekâ Çağında Bölgesel Farklılıklar & Çok Boyutlu Analiz • TÜİK BİT Araştırması • YouTube NLP • Dilara Şenay | TÜBİTAK 2209-A",
-                    style={"color": C_MUTED, "fontSize": "12px", "fontWeight": "650", "margin": "8px 0 12px"},
-                ),
-                html.Div([
-                    html.Span("CSV Tabanlı Zaman Serisi", style={"background": "rgba(139,92,246,0.12)", "color": "#7C3AED", "padding": "7px 10px", "borderRadius": "999px", "fontSize": "10px", "fontWeight": "900", "letterSpacing": "0.3px"}),
-                    html.Span("TÜİK BİT Araştırması", style={"background": "rgba(0,166,200,0.10)", "color": "#08788F", "padding": "7px 10px", "borderRadius": "999px", "fontSize": "10px", "fontWeight": "900", "letterSpacing": "0.3px"}),
-                    html.Span("YouTube NLP", style={"background": "rgba(236,72,153,0.12)", "color": "#DB2777", "padding": "7px 10px", "borderRadius": "999px", "fontSize": "10px", "fontWeight": "900", "letterSpacing": "0.3px"}),
-                    html.Span("TÜBİTAK 2209-A", style={"background": "rgba(249,115,22,0.12)", "color": "#EA580C", "padding": "7px 10px", "borderRadius": "999px", "fontSize": "10px", "fontWeight": "900", "letterSpacing": "0.3px"}),
-                ], style={"display": "flex", "gap": "8px", "flexWrap": "wrap"}),
-            ]),
-        ], style={"display": "flex", "alignItems": "center"}),
-
-        html.Div([
-            html.Div("Zaman Kapsamı", style={"color": "#6D28D9", "fontSize": "11px", "fontWeight": "950", "marginBottom": "8px", "letterSpacing": "0.2px"}),
-            dcc.Dropdown(
-                id="global-yil",
-                options=[{"label": "Genel", "value": "all"}] + [{"label": str(y), "value": y} for y in YILLAR],
-                value="all",
-                clearable=False,
-                searchable=False,
-                style={"width": "180px", "fontSize": "13px", "color": C_TEXT},
-            ),
-        ], style={
-            "display": "flex",
-            "flexDirection": "column",
-            "alignItems": "stretch",
-            "background": "rgba(255,255,255,.56)",
-            "padding": "14px 16px",
-            "borderRadius": "24px",
-            "border": "1px solid rgba(139,92,246,.18)",
-            "boxShadow": "0 18px 42px rgba(139,92,246,.14)",
-            "backdropFilter": "blur(18px)",
-        }),
-    ], style={
-        "background": "radial-gradient(circle at 70% 0%, rgba(236,72,153,0.22), transparent 26%), radial-gradient(circle at 92% 12%, rgba(6,182,212,0.24), transparent 25%), radial-gradient(circle at 55% 110%, rgba(139,92,246,0.16), transparent 34%), linear-gradient(135deg, rgba(255,255,255,0.93), rgba(253,242,248,0.82), rgba(236,254,255,0.78))",
-        "backdropFilter": "blur(22px)",
-        "borderBottom": f"1px solid {C_BORDER}",
-        "boxShadow": "0 26px 70px rgba(139, 92, 246, 0.18)",
-        "padding": "26px 32px",
-        "overflow": "visible",
-        "display": "flex",
-        "justifyContent": "space-between",
-        "alignItems": "center",
-        "position": "sticky",
-        "top": "0",
-        "zIndex": "100",
-    }),
-
-    html.Div([
-        dcc.Tabs(id="ana-sekme", value="genel", children=[
-            dcc.Tab(label="Genel Bakış", value="genel"),
-            dcc.Tab(label="Bölgesel Harita", value="harita"),
-            dcc.Tab(label="Demografik", value="demo"),
-            dcc.Tab(label="YZ & Dijital Beceri", value="yz"),
-            dcc.Tab(label="Karşılaştırma", value="karsil"),
-            dcc.Tab(label="YouTube NLP", value="youtube_nlp"),
-        ], style={"fontFamily": "inherit"}, colors={"border": C_BORDER, "primary": C_ACCENT, "background": C_BG}),
-    ], style={
-        "padding": "16px 32px 8px",
-        "background": "linear-gradient(90deg, rgba(255,255,255,0.55), rgba(236,254,255,0.35), rgba(250,245,255,0.55))",
-        "backdropFilter": "blur(12px)",
-        "borderBottom": f"1px solid {C_BORDER}",
-        "boxShadow": "0 10px 30px rgba(15,23,42,0.04)",
-    }),
-
-    html.Div(id="sekme-icerik", style={"padding": "20px 32px"}),
-])
-
-
-# ─────────────────────────────────────────────────────────────
-# 8. CALLBACK'LER
-# ─────────────────────────────────────────────────────────────
-
-@app.callback(
-    Output("sekme-icerik", "children"),
-    Input("ana-sekme", "value"),
-    Input("global-yil", "value"),
-)
-def render_tab(sekme, yil):
-    if sekme == "genel":
-        return genel_bakis()
-    if sekme == "harita":
-        return bolgesel_harita()
-    if sekme == "demo":
-        return demografik(yil)
-    if sekme == "yz":
-        return yz_beceri_analizi(yil)
-    if sekme == "karsil":
-        return karsil_analiz()
-    if sekme == "youtube_nlp":
-        return youtube_nlp_analizi()
-    return html.Div("Sekme bulunamadı")
-
-
-@app.callback(Output("hero-row", "children"), Input("global-yil", "value"))
-def update_hero_row(yil):
-    return make_hero_row(yil)
-
-
-@app.callback(Output("kpi-row", "children"), Input("global-yil", "value"))
-def update_kpi_row(yil):
-    return make_kpi_row(yil)
-
-
-@app.callback(
-    Output("ts-grafik", "figure"),
-    Input("ts-gostergeler", "value"),
-    Input("global-yil", "value"),
-)
 def update_ts(secili, yil):
     if not secili:
         secili = ["internet_erisim"]
@@ -2056,24 +1519,6 @@ def update_ts(secili, yil):
     return fig
 
 
-@app.callback(Output("buyume-grafik", "figure"), Input("global-yil", "value"))
-def update_buyume(yil):
-    return _buyume_fig(yil)
-
-
-@app.callback(Output("pandemi-grafik", "figure"), Input("global-yil", "value"))
-def update_pandemi(yil):
-    return _pandemi_fig(yil)
-
-
-@app.callback(
-    Output("bolge-harita", "figure"),
-    Output("bolge-siralama", "figure"),
-    Output("ucurum-grafik", "figure"),
-    Output("radar-grafik", "figure"),
-    Input("harita-gosterge", "value"),
-    Input("global-yil", "value"),
-)
 def update_harita(gosterge, yil):
     etiketler = {
         "internet_erisim": "İnternet Erişimi (%)",
@@ -2235,11 +1680,6 @@ def update_harita(gosterge, yil):
     return fig, _bolge_bar(df), _ucurum_fig(df), _radar_fig(df)
 
 
-@app.callback(
-    Output("karsil-grafik", "figure"),
-    Input("karsil-yil1", "value"),
-    Input("karsil-yil2", "value"),
-)
 def update_karsil(yil1, yil2):
     if yil1 == yil2:
         yil2 = min(yil1 + 1, max(YILLAR))
@@ -2278,11 +1718,336 @@ def update_karsil(yil1, yil2):
 # 9. ÇALIŞTIRMA
 # ─────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
-    print("\n" + "=" * 60)
-    print("  TÜRKİYE DİJİTALLEŞME DASHBOARD + YOUTUBE NLP")
-    print("  Dilara Şenay | TÜBİTAK 2209-A")
-    print("=" * 60)
-    print("  Tarayıcıda açın: http://127.0.0.1:8050")
-    print("=" * 60 + "\n")
-    app.run(debug=True, port=8050)
+
+
+
+# ─────────────────────────────────────────────────────────────
+# STREAMLIT ARAYÜZÜ
+# ─────────────────────────────────────────────────────────────
+
+st.set_page_config(page_title="Türkiye Dijitalleşme Dashboard | Dilara Şenay", layout="wide")
+
+st.markdown("""
+<style>
+/* EK DÜZELTME: boş barları ve Streamlit üst boşluklarını temizle */
+header,
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"],
+#MainMenu,
+footer {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+}
+
+.block-container {
+    padding-top: 0rem !important;
+    padding-bottom: 0rem !important;
+    padding-left: 4.6rem !important;
+    padding-right: 4.6rem !important;
+    max-width: 100% !important;
+}
+
+div[data-testid="stVerticalBlock"] > div:empty {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.element-container:empty {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.stApp {
+    background: radial-gradient(circle at 10% 5%, rgba(236,72,153,0.18) 0%, transparent 24%),
+                radial-gradient(circle at 88% 0%, rgba(6,182,212,0.22) 0%, transparent 28%),
+                radial-gradient(circle at 50% 18%, rgba(139,92,246,0.18) 0%, transparent 30%),
+                linear-gradient(135deg, #FFF7FD 0%, #F4EEFF 45%, #EAFBFF 100%);
+}
+.block-container { padding-top: 2rem; }
+.top-box {
+    padding: 24px 28px;
+    border-radius: 30px;
+    background: rgba(255,255,255,.55);
+    border: 1px solid rgba(255,255,255,.70);
+    box-shadow: 0 24px 60px rgba(139,92,246,.14);
+}
+.title { font-size: 38px; font-weight: 950; color: #181124; line-height: 1.05; }
+.subtitle { font-size: 13px; color: #71717A; font-weight: 700; margin-top: 6px; }
+.badge {
+    display:inline-block; padding:8px 12px; border-radius:999px; margin:12px 6px 0 0;
+    font-size:11px; font-weight:900; background:rgba(139,92,246,.13); color:#6D28D9;
+}
+.card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.90), rgba(255,255,255,0.70));
+    border: 1px solid #E9D8FD; border-radius: 26px; padding: 20px;
+    box-shadow: 0 24px 60px rgba(139,92,246,0.13); margin-bottom: 14px;
+}
+.hero-card {
+    padding: 28px 30px; border-radius: 28px;
+    background: linear-gradient(135deg,#7C3AED,#8B5CF6,#06B6D4);
+    box-shadow: 0 28px 60px rgba(124,58,237,.28); color: white;
+}
+.hero-value { font-size: 52px; font-weight: 950; line-height: .95; }
+.kpi {
+    background: radial-gradient(circle at 85% 0%, rgba(139,92,246,.16), transparent 34%), linear-gradient(180deg, rgba(255,255,255,.94), rgba(255,255,255,.74));
+    border: 1px solid #E9D8FD; border-top: 5px solid #8B5CF6; border-radius: 26px;
+    padding: 16px 18px; box-shadow: 0 22px 48px rgba(139,92,246,.13); min-height: 138px;
+}
+.kpi-title { font-size:11px; font-weight:850; color:#181124; letter-spacing:.3px; }
+.kpi-value { font-size:30px; font-weight:950; color:#8B5CF6; line-height:1; margin-top:8px; }
+.kpi-sub { font-size:10px; color:#71717A; font-weight:650; margin-top:8px; }
+.kpi-trend { font-size:10px; color:#22C55E; font-weight:850; margin-top:10px; }
+</style>
+""", unsafe_allow_html=True)
+
+
+def st_card_title(title, subtitle=None):
+    st.markdown(f"<p style='color:{C_TEXT};font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;margin:0 0 5px 0'>{title}</p>", unsafe_allow_html=True)
+    if subtitle:
+        st.markdown(f"<p style='color:{C_MUTED};font-size:11px;margin:0 0 18px 0'>{subtitle}</p>", unsafe_allow_html=True)
+
+
+def current_row(yil):
+    aktif_yil = max(YILLAR) if yil == "all" else int(yil)
+    return turkey_ts[turkey_ts["yil"] == aktif_yil].iloc[0], aktif_yil
+
+
+def render_hero(yil):
+    row, aktif_yil = current_row(yil)
+    base = turkey_ts[turkey_ts["yil"] == min(YILLAR)].iloc[0]
+    score_cols = ["internet_erisim", "edevlet", "eticaret", "dijital_beceri"]
+    score_now = safe_nanmean([row[c] for c in score_cols])
+    score_base = safe_nanmean([base[c] for c in score_cols])
+    delta = score_now - score_base if not pd.isna(score_now) and not pd.isna(score_base) else np.nan
+    c1, c2, c3 = st.columns([1.35, .9, 1])
+    with c1:
+        st.markdown(f"""
+        <div class='hero-card'>
+            <div style='font-size:12px;font-weight:950;letter-spacing:1px;color:rgba(255,255,255,.92);'>DİJİTAL DÖNÜŞÜM SKORU</div>
+            <div style='margin-top:10px'><span class='hero-value'>{fmt_num(score_now)}</span><span style='font-size:22px;font-weight:850;color:rgba(255,255,255,.72)'> / 100</span></div>
+            <div style='font-size:15px;font-weight:850;margin-top:9px'>{'Genel dönem görünümü' if yil == 'all' else str(aktif_yil) + ' yılı görünümü'}</div>
+            <div style='font-size:12px;font-weight:650;color:rgba(255,255,255,.78);margin-top:4px'>{min(YILLAR)}–{max(YILLAR)} dönemi CSV’den hesaplandı</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""
+        <div class='card'>
+            <div style='font-size:12px;font-weight:950;letter-spacing:.6px;color:{C_MUTED}'>DÖNEM DEĞİŞİMİ</div>
+            <div style='font-size:28px;font-weight:950;color:{C_GREEN};margin-top:8px'>{fmt_delta(delta).replace('↑ ', '')}</div>
+            <div style='font-size:12px;font-weight:750;color:{C_MUTED};margin-top:6px'>{min(YILLAR)} → {aktif_yil}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""
+        <div class='card'>
+            <div class='badge'>Nicel veri: TÜİK</div><br>
+            <div class='badge' style='background:rgba(236,72,153,.12);color:#DB2777'>Nitel veri: YouTube NLP</div><br>
+            <div class='badge' style='background:rgba(6,182,212,.12);color:#08788F'>Odak alanı: Bölgesel uçurum</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def render_kpis(yil):
+    row, aktif_yil = current_row(yil)
+    base = turkey_ts[turkey_ts["yil"] == min(YILLAR)].iloc[0]
+    cards = [
+        ("İnternet Erişimi", "internet_erisim", C_ACCENT, "Hanehalkı erişimi"),
+        ("E-Devlet Kullanımı", "edevlet", C_ACCENT2, "Kamu hizmetleri"),
+        ("Dijital Beceri", "dijital_beceri", C_GREEN, "Temel dijital yetkinlik"),
+        ("E-Ticaret Kullanımı", "eticaret", C_ORANGE, "Son 12 ay kullanımı"),
+        ("YZ Farkındalığı", "yapay_zeka_farkin", C_PURPLE, "Kullanım / farkındalık"),
+    ]
+    cols = st.columns(5)
+    for col_obj, (title, col, color, desc) in zip(cols, cards):
+        with col_obj:
+            st.markdown(f"""
+            <div class='kpi' style='border-top-color:{color}'>
+                <div class='kpi-title'>{title.upper()}</div>
+                <div class='kpi-value' style='color:{color}'>{fmt_pct(row[col])}</div>
+                <div class='kpi-sub'>{min(YILLAR)}–{max(YILLAR)} genel dönem · {desc}</div>
+                <div class='kpi-trend'>{fmt_delta(row[col] - base[col])} ({min(YILLAR)} → {aktif_yil})</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+def render_youtube_kpis(df):
+    toplam = len(df)
+    temiz = df["temiz_yorum"].notna().sum() if "temiz_yorum" in df.columns else toplam
+    oran = df["duygu"].value_counts(normalize=True) * 100 if "duygu" in df.columns and toplam else pd.Series(dtype=float)
+    cards = [
+        ("Toplam Yorum", f"{toplam:,}".replace(',', '.'), "YouTube’dan toplanan yorum"),
+        ("Temiz Yorum", f"{temiz:,}".replace(',', '.'), "Analize giren yorum"),
+        ("Pozitif", f"%{oran.get('Pozitif', 0):.1f}", "Olumlu algı"),
+        ("Negatif", f"%{oran.get('Negatif', 0):.1f}", "Olumsuz algı"),
+        ("Nötr", f"%{oran.get('Nötr', 0):.1f}", "Bilgilendirici / yorumsal"),
+    ]
+    cols = st.columns(5)
+    for c, (t, v, s) in zip(cols, cards):
+        with c:
+            st.markdown(f"<div class='kpi'><div class='kpi-title'>{t.upper()}</div><div class='kpi-value'>{v}</div><div class='kpi-sub'>{s}</div><div class='kpi-trend'>YouTube NLP çıktısı</div></div>", unsafe_allow_html=True)
+
+
+def render_youtube_summary(df):
+    if df.empty or "duygu" not in df.columns:
+        return
+    toplam = len(df)
+    oran = df["duygu"].value_counts(normalize=True) * 100
+    notr = oran.get("Nötr", 0); pozitif = oran.get("Pozitif", 0); negatif = oran.get("Negatif", 0)
+    st.markdown(f"""
+    <div class='card' style='border-left:6px solid {C_ACCENT2}'>
+        <div style='font-size:14px;font-weight:800;letter-spacing:.7px'>NLP SONUÇ ÖZETİ</div>
+        <div style='font-size:13px;line-height:1.7;font-weight:650;margin-top:12px'>
+        Toplam {toplam:,} yorum analiz edilmiştir. Yorumların %{notr:.1f}’i nötr, %{pozitif:.1f}’i pozitif ve %{negatif:.1f}’i negatif olarak sınıflandırılmıştır.
+        </div>
+    </div>
+    """.replace(',', '.'), unsafe_allow_html=True)
+
+
+with st.container():
+    top1, top2 = st.columns([5, 1.2])
+    with top1:
+        st.markdown("""
+        <div class='top-box'>
+            <div class='title'>Türkiye Dijitalleşme Endeksi</div>
+            <div class='subtitle'>Yapay Zekâ Çağında Bölgesel Farklılıklar & Çok Boyutlu Analiz • TÜİK BİT Araştırması • YouTube NLP • Dilara Şenay | TÜBİTAK 2209-A</div>
+            <span class='badge'>CSV Tabanlı Zaman Serisi</span>
+            <span class='badge' style='background:rgba(6,182,212,.12);color:#08788F'>TÜİK BİT Araştırması</span>
+            <span class='badge' style='background:rgba(236,72,153,.12);color:#DB2777'>YouTube NLP</span>
+            <span class='badge' style='background:rgba(249,115,22,.12);color:#C2410C'>TÜBİTAK 2209-A</span>
+        </div>
+        """, unsafe_allow_html=True)
+    with top2:
+        yil = st.selectbox("Zaman Kapsamı", options=["all"] + YILLAR, format_func=lambda x: "Genel" if x == "all" else str(x))
+
+st.write("")
+
+tabs = st.tabs(["Genel Bakış", "Bölgesel Harita", "Demografik", "YZ & Dijital Beceri", "Karşılaştırma", "YouTube NLP"])
+
+with tabs[0]:
+    render_hero(yil)
+    render_kpis(yil)
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st_card_title("Zaman Serisi Analizi", "CSV’den hesaplanan temel BİT göstergeleri trendi")
+        secili = st.multiselect("Göstergeler", ["internet_erisim", "dijital_beceri", "edevlet", "eticaret", "sosyal_medya", "cevrimici_egitim", "yapay_zeka_farkin", "bilgisayar"], default=["internet_erisim", "edevlet", "eticaret", "yapay_zeka_farkin"])
+        st.plotly_chart(update_ts(secili, yil), use_container_width=True)
+    with c2:
+        st_card_title("Pandemi Etkisi Analizi", "COVID-19 dijital dönüşüm hızlanması")
+        st.plotly_chart(_pandemi_fig(yil), use_container_width=True)
+    c3, c4 = st.columns([2, 3])
+    with c3:
+        st_card_title("Yıllık Büyüme Hızı (%)", "Gösterge bazında yıllık değişim oranları")
+        st.plotly_chart(_buyume_fig(yil), use_container_width=True)
+    with c4:
+        st_card_title("Uluslararası Karşılaştırma", "DESI 2024 – Türkiye vs AB ülkeleri")
+        st.plotly_chart(_desi_fig(), use_container_width=True)
+
+with tabs[1]:
+    gosterge = st.radio("Harita Göstergesi", ["internet_erisim", "edevlet", "dijital_beceri", "eticaret", "dijit_skor"], horizontal=True, format_func=lambda x: {"internet_erisim":"İnternet Erişimi", "edevlet":"E-Devlet", "dijital_beceri":"Dijital Beceri", "eticaret":"E-Ticaret", "dijit_skor":"Dijitalleşme Skoru"}[x])
+    fig_map, fig_bar, fig_ucurum, fig_radar = update_harita(gosterge, yil)
+    c1, c2 = st.columns([1, 2.2])
+    with c1:
+        st_card_title("Bölge Sıralamaları")
+        st.plotly_chart(fig_bar, use_container_width=True)
+    with c2:
+        st_card_title("Türkiye Bölgesel Dijitalleşme Haritası", "İBBS-1 bölgeleri · seçili göstergeye ve yıla göre renklendirilmiş gerçek Türkiye haritası")
+        st.plotly_chart(fig_map, use_container_width=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        st_card_title("Bölgesel Uçurum Analizi")
+        st.plotly_chart(fig_ucurum, use_container_width=True)
+    with c4:
+        st_card_title("Küme Dağılımı – Radar Grafiği")
+        st.plotly_chart(fig_radar, use_container_width=True)
+
+with tabs[2]:
+    c1, c2 = st.columns(2)
+    with c1:
+        st_card_title("Yaş Grubuna Göre Dijital Kullanım")
+        st.plotly_chart(_yas_fig(yil), use_container_width=True)
+    with c2:
+        st_card_title("Eğitim Düzeyi ile Dijitalleşme İlişkisi")
+        st.plotly_chart(_egitim_fig(yil), use_container_width=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        st_card_title("Cinsiyet Farklılıkları")
+        st.plotly_chart(_cinsiyet_fig(yil), use_container_width=True)
+    with c4:
+        st_card_title("Dijitalleşmeyi Açıklayan Değişkenler")
+        st.plotly_chart(_ols_fig(yil), use_container_width=True)
+
+with tabs[3]:
+    c1, c2 = st.columns(2)
+    with c1:
+        st_card_title("Yapay Zekâ Kullanımı")
+        st.plotly_chart(_yz_trend_fig(yil), use_container_width=True)
+    with c2:
+        st_card_title("Dijital Beceri Profili")
+        st.plotly_chart(_beceri_fig(yil), use_container_width=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        st_card_title("Yaş Grubuna Göre Yapay Zekâ")
+        st.plotly_chart(_yz_by_age_fig(yil), use_container_width=True)
+    with c4:
+        st_card_title("Gelir Grubuna Göre Dijitalleşme")
+        st.plotly_chart(_gelir_dijital_fig(yil), use_container_width=True)
+
+with tabs[4]:
+    y1, y2 = st.columns(2)
+    yil1 = y1.selectbox("Yıl 1", YILLAR, index=0)
+    yil2 = y2.selectbox("Yıl 2", YILLAR, index=len(YILLAR)-1)
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st_card_title("Yıllık Karşılaştırmalı Analiz")
+        st.plotly_chart(update_karsil(yil1, yil2), use_container_width=True)
+    with c2:
+        st_card_title("Pandemi Öncesi / Sonrası")
+        st.plotly_chart(_ivme_fig(), use_container_width=True)
+    st_card_title("Başlangıç – Son Yıl Değişimi")
+    st.plotly_chart(_hedef_fig(), use_container_width=True)
+
+with tabs[5]:
+    df, tfidf_df, lda_df, coherence_df = load_youtube_nlp_data()
+    if df.empty:
+        st.warning("youtube_nlp_tam.csv dosyasını gorseller klasörüne ekleyin.")
+    else:
+        st.markdown("""
+        <div class='hero-card'>
+            <div style='font-size:12px;font-weight:950;letter-spacing:1px;color:rgba(255,255,255,.90)'>YOUTUBE NLP</div>
+            <div style='font-size:34px;font-weight:950;line-height:1.05;margin-top:10px'>Dijitalleşmeye Yönelik Toplumsal Algı</div>
+            <div style='font-size:13px;font-weight:650;color:rgba(255,255,255,.78);margin-top:8px'>YouTube yorumları üzerinden duygu analizi, kelime frekansı, TF-IDF, LDA konu dağılımı ve model tutarlılığı</div>
+        </div>
+        """, unsafe_allow_html=True)
+        render_youtube_kpis(df)
+        render_youtube_summary(df)
+        c1, c2 = st.columns(2)
+        with c1:
+            st_card_title("Duygu Dağılımı", "Pozitif, negatif ve nötr yorum sayıları")
+            st.plotly_chart(youtube_sentiment_fig(df), use_container_width=True)
+        with c2:
+            st_card_title("Duygu Oranı", "Yorum sınıflarının genel oranı")
+            st.plotly_chart(youtube_sentiment_donut_fig(df), use_container_width=True)
+        st_card_title("Anahtar Kelimeye Göre Duygu", "Arama kelimeleri bazında toplumsal algı dağılımı")
+        st.plotly_chart(youtube_keyword_sentiment_fig(df), use_container_width=True)
+        c3, c4 = st.columns(2)
+        with c3:
+            st_card_title("En Sık Kullanılan Kelimeler", "Temizlenmiş yorumlar üzerinden anlamlı kelime frekansı")
+            st.plotly_chart(youtube_word_freq_fig(df), use_container_width=True)
+        with c4:
+            st_card_title("TF-IDF Terimleri", "Dijitalleşme söylemini ayıran güçlü terimler")
+            st.plotly_chart(youtube_tfidf_fig(tfidf_df), use_container_width=True)
+        c5, c6 = st.columns(2)
+        with c5:
+            st_card_title("LDA Konu Dağılımı", "Yorumların konu kümelerine göre dağılımı")
+            st.plotly_chart(youtube_lda_distribution_fig(df, lda_df), use_container_width=True)
+        with c6:
+            st_card_title("LDA Coherence Skoru", "En uygun konu sayısının model tutarlılığına göre seçimi")
+            st.plotly_chart(youtube_coherence_fig(coherence_df), use_container_width=True)
+
