@@ -27,6 +27,7 @@ except Exception:
 # ─────────────────────────────────────────────────────────────
 # 1. GENEL AYARLAR
 # ─────────────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(__file__)
 
 DATA_CANDIDATES = [
     os.path.join(BASE_DIR, "data", "butunveriler_sample.csv"),
